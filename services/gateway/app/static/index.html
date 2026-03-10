@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Router Gateway</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>AI Router Gateway</h1>
+      <p class="subtitle">Submit a query to route through the AI microservice mesh</p>
+    </header>
+
+    <section class="input-section">
+      <form id="query-form" class="query-form">
+        <label for="query-input">Query</label>
+        <textarea
+          id="query-input"
+          name="text"
+          rows="3"
+          placeholder="e.g. compare nginx ingress vs traefik"
+          required
+        ></textarea>
+        <button type="submit" id="submit-btn">Submit</button>
+      </form>
+    </section>
+
+    <section id="result-section" class="result-section hidden">
+      <div class="route-card" id="route-card">
+        <h2>Route</h2>
+        <div class="route-info">
+          <span id="route-name" class="route-name"></span>
+          <div class="confidence-bar">
+            <div id="confidence-fill" class="confidence-fill"></div>
+            <span id="confidence-label" class="confidence-label"></span>
+          </div>
+          <div id="explanation" class="explanation"></div>
+        </div>
+      </div>
+
+      <div class="hop-diagram" id="hop-diagram">
+        <h2>Request Flow</h2>
+        <div id="hop-chain" class="hop-chain"></div>
+      </div>
+
+      <div class="trace-timeline" id="trace-timeline">
+        <h2>Trace</h2>
+        <ul id="trace-list" class="trace-list"></ul>
+      </div>
+
+      <div class="timings" id="timings">
+        <h2>Timings</h2>
+        <div id="timings-content" class="timings-content"></div>
+      </div>
+
+      <div class="backend-response" id="backend-response">
+        <h2>Backend Response</h2>
+        <pre id="backend-json" class="backend-json"></pre>
+      </div>
+
+      <div class="unknown-message hidden" id="unknown-message">
+        <p id="unknown-text"></p>
+      </div>
+
+      <div class="service-error hidden" id="service-error">
+        <p id="service-error-text"></p>
+      </div>
+    </section>
+
+    <section id="error-section" class="error-section hidden">
+      <h2>Error</h2>
+      <p id="error-text"></p>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+text,true_label,pred_label,pred_confidence,probs_json
+optical character recognition on receipts,image,unknown,0.688108,"{""search"": 0.050694571361329044, ""image"": 0.2377324853711794, ""ops"": 0.023465071120653543, ""unknown"": 0.688107872146838}"
+wait what,unknown,search,0.542935,"{""search"": 0.010353084930188364, ""image"": 0.008545517507234052, ""ops"": 0.5429346052139575, ""unknown"": 0.43816679234862}"
+how does text classification work,search,unknown,0.645111,"{""search"": 0.12169186766166168, ""image"": 0.13945224482696938, ""ops"": 0.09374467509064152, ""unknown"": 0.6451112124207273}"
+what is going on,unknown,search,0.936724,"{""search"": 0.00377577869187578, ""image"": 0.0061656801709109536, ""ops"": 0.9367236554598486, ""unknown"": 0.053334885677364635}"
+image pull from private registry fails in k8s - imagePullSecrets,ops,image,0.860396,"{""search"": 0.8603958924249596, ""image"": 0.11151946861243964, ""ops"": 0.015098928493273886, ""unknown"": 0.01298571046932694}"
+visual anomaly detection,image,unknown,0.469861,"{""search"": 0.312088177242454, ""image"": 0.15963219219044159, ""ops"": 0.05841836393095961, ""unknown"": 0.46986126663614486}"
+analyze aerial photos,image,unknown,0.514742,"{""search"": 0.27109220273595686, ""image"": 0.1582223079713155, ""ops"": 0.05594301323245281, ""unknown"": 0.5147424760602748}"
+how does predict_proba work,search,unknown,0.734893,"{""search"": 0.053378595234316456, ""image"": 0.1260277228283669, ""ops"": 0.0857008445620018, ""unknown"": 0.7348928373753147}"

@@ -1,0 +1,117 @@
+# Local AI Microservice Mesh - Docker Compose
+# Per PROJECT_PLAN Section 9: anchors, health checks, logging (NFR-024, NFR-026)
+
+volumes:
+  model_artifacts:
+
+x-common-env: &common-env
+  LOG_LEVEL: info
+  REQUEST_TIMEOUT: "30"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+
+x-common-healthcheck: &common-healthcheck
+  test:
+    - CMD
+    - python
+    - -c
+    - "import sys,urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2); sys.exit(0)"
+  interval: 10s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
+
+x-common-logging: &common-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  gateway:
+    build:
+      context: ../services/gateway
+      dockerfile: Dockerfile
+    depends_on:
+      ai_router:
+        condition: service_healthy
+      search_service:
+        condition: service_healthy
+      image_service:
+        condition: service_healthy
+      ops_service:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      AI_ROUTER_URL: "http://ai_router:8000"
+      SEARCH_SERVICE_URL: "http://search_service:8000"
+      IMAGE_SERVICE_URL: "http://image_service:8000"
+      OPS_SERVICE_URL: "http://ops_service:8000"
+      T_ROUTE: "0.60"
+      T_MARGIN: "0.10"
+    healthcheck:
+      <<: *common-healthcheck
+    logging:
+      <<: *common-logging
+    ports:
+      - "8000:8000"
+
+  ai_router:
+    build:
+      context: ../services/ai_router
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+      MODEL_PATH: /model/model.joblib
+    healthcheck:
+      <<: *common-healthcheck
+    logging:
+      <<: *common-logging
+    volumes:
+      - model_artifacts:/model:ro
+
+  search_service:
+    build:
+      context: ../services/search_service
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+    healthcheck:
+      <<: *common-healthcheck
+    logging:
+      <<: *common-logging
+
+  image_service:
+    build:
+      context: ../services/image_service
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+    healthcheck:
+      <<: *common-healthcheck
+    logging:
+      <<: *common-logging
+
+  ops_service:
+    build:
+      context: ../services/ops_service
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+    healthcheck:
+      <<: *common-healthcheck
+    logging:
+      <<: *common-logging
+
+  trainer:
+    build:
+      context: ../services/trainer
+      dockerfile: Dockerfile
+    profiles:
+      - train
+    volumes:
+      - model_artifacts:/model
+    environment:
+      <<: *common-env
+    logging:
+      <<: *common-logging

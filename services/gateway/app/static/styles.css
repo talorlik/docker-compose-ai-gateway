@@ -1,0 +1,244 @@
+/* AI Router Gateway - UI styles */
+
+:root {
+  --bg: #0f1419;
+  --surface: #1a2332;
+  --border: #2d3a4d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --success: #3fb950;
+  --unknown: #f85149;
+  --font-mono: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.header {
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.input-section {
+  margin-bottom: 2rem;
+}
+
+.query-form label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+}
+
+#query-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  resize: vertical;
+  margin-bottom: 0.75rem;
+}
+
+#query-input::placeholder {
+  color: var(--muted);
+}
+
+#query-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#submit-btn {
+  padding: 0.5rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#submit-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+#submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.result-section h2,
+.error-section h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  color: var(--muted);
+}
+
+.route-card,
+.hop-diagram,
+.trace-timeline,
+.timings,
+.backend-response,
+.unknown-message,
+.service-error,
+.error-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.route-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.route-name {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.route-name.known {
+  color: var(--success);
+}
+
+.route-name.unknown {
+  color: var(--unknown);
+}
+
+.confidence-bar {
+  position: relative;
+  height: 1.5rem;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.confidence-fill {
+  height: 100%;
+  background: var(--success);
+  transition: width 0.2s ease;
+}
+
+.route-name.unknown + .confidence-bar .confidence-fill {
+  background: var(--unknown);
+}
+
+.confidence-label {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--bg);
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
+.explanation {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.hop-chain {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.hop-node {
+  color: var(--accent);
+}
+
+.hop-arrow {
+  color: var(--muted);
+}
+
+.trace-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.trace-entry {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-family: var(--font-mono);
+}
+
+.trace-entry:last-child {
+  border-bottom: none;
+}
+
+.timings-content {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+}
+
+.backend-json {
+  margin: 0;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.unknown-message p,
+.service-error p {
+  margin: 0;
+  color: var(--unknown);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.error-section {
+  border-color: var(--unknown);
+}
+
+.error-section p {
+  margin: 0;
+  color: var(--unknown);
+}
