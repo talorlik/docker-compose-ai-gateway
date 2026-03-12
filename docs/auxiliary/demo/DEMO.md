@@ -15,6 +15,8 @@ Per PROJECT_PLAN Section 10 and NFR-034.
 | Dev mode (hot reload) | `docker compose -f compose/docker-compose.yaml -f compose/docker-compose.dev.yaml up --build -d` |
 | Run tests | `pytest services/gateway/tests/ services/ai_router/tests/ -v` |
 | Train model | `docker compose -f compose/docker-compose.yaml --profile train run --rm trainer` |
+| Refine dataset | `demo.sh refine` then `demo.sh promote` |
+| Refine (limit rows) | `demo.sh refine --limit 5` or `-e REFINER_LIMIT=5` |
 
 ## 1. Build
 
@@ -215,6 +217,9 @@ cd services/ai_router && pytest tests/ -v
 
 **Train new model (writes to shared volume):**
 
+`train.csv` is mounted from the host at runtime, so edits to
+`services/trainer/train.csv` take effect immediately without rebuilding.
+
 ```bash
 # From project root
 docker compose -f compose/docker-compose.yaml --profile train run --rm trainer
@@ -233,6 +238,125 @@ curl -s -X POST http://localhost:8000/api/request \
   -H "Content-Type: application/json" \
   -d '{"text": "compare nginx ingress vs traefik"}' | python3 -m json.tool
 ```
+
+## 10.1 Refine Dataset (Runbook)
+
+Refiner analyzes misclassified rows via local LLM (Ollama), produces proposals,
+and writes `train_candidate.csv`. Only data that improves metrics is promoted
+to `train.csv` via `scripts/promote.sh`.
+
+See [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md),
+[REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md),
+[REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md) for full
+documentation.
+
+**Prerequisites:** Docker Compose, trainer run first (produces
+`misclassified.csv`). Ollama pulls `qwen2.5:7b-instruct` on first refine run
+(may take several minutes).
+
+### 10.1.1 Quick Reference
+
+| Action | Command |
+| --- | --- |
+| Full workflow | `demo.sh train` then `demo.sh refine` then `demo.sh promote` |
+| Refine (all rows) | `docker compose -f compose/docker-compose.yaml --profile refine run --rm refiner` |
+| Refine (limit rows) | `docker compose ... -e REFINER_LIMIT=5 --profile refine run --rm refiner` |
+| Promote | `./scripts/promote.sh` |
+| Start Ollama only | `docker compose -f compose/docker-compose.yaml --profile refine up ollama -d` |
+
+### 10.1.2 Environment Variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `REFINER_LIMIT` | 0 (no limit) | Max misclassified rows to process; use for faster runs |
+| `REFINER_BANNED_PATTERNS` | (empty) | Comma-separated substrings to reject in proposals |
+| `OLLAMA_HOST` | `http://ollama:11434` | Ollama API URL |
+| `OLLAMA_MODEL` | `qwen2.5:7b-instruct` | Model for relabel and augmentation |
+
+### 10.1.3 Step-by-Step Workflow
+
+#### Step 1: Train
+
+Produces misclassified.csv, metrics.json in model volume.
+
+```bash
+docker compose -f compose/docker-compose.yaml --profile train run --rm trainer
+```
+
+#### Step 2: Refine
+
+Requires Ollama; produces train_candidate.csv.
+
+```bash
+docker compose -f compose/docker-compose.yaml --profile refine run --rm refiner
+```
+
+#### Optional: Limit rows for faster runs
+
+```bash
+docker compose -f compose/docker-compose.yaml --profile refine run --rm \
+  -e REFINER_LIMIT=5 refiner
+```
+
+#### Optional: Reject proposals containing banned patterns
+
+```bash
+docker compose -f compose/docker-compose.yaml --profile refine run --rm \
+  -e REFINER_BANNED_PATTERNS="foo,bar" refiner
+```
+
+#### Step 3: Promote
+
+Retrain and promote only if metrics improve.
+
+```bash
+./scripts/promote.sh
+```
+
+#### Step 4: If promoted, restart ai_router
+
+```bash
+docker compose -f compose/docker-compose.yaml restart ai_router
+```
+
+### 10.1.4 Outputs (in model volume)
+
+| File | Purpose |
+| --- | --- |
+| `proposed_relabels.csv` | Audit: relabel proposals |
+| `proposed_examples.csv` | Audit: augmentation proposals |
+| `refinement_report.json` | Summary: rows_processed, relabels_proposed, examples_proposed, rows_skipped, errors |
+| `train_candidate.csv` | Merged candidate; promote conditionally |
+
+### 10.1.5 End-to-End Verification (REF-AC-001, REF-AC-002)
+
+```bash
+# 1. Train
+docker compose -f compose/docker-compose.yaml --profile train run --rm trainer
+
+# 2. Refine (limit rows for faster runs)
+docker compose -f compose/docker-compose.yaml --profile refine run --rm \
+  -e REFINER_LIMIT=5 refiner
+
+# 3. Verify proposal files and train_candidate exist
+docker compose -f compose/docker-compose.yaml --profile refine run --rm \
+  --no-deps --entrypoint sh refiner -c \
+  "test -f /data/proposed_relabels.csv && test -f /data/proposed_examples.csv \
+   && test -f /data/refinement_report.json && test -f /data/train_candidate.csv \
+   && echo OK"
+
+# 4. Promote (retrains and promotes only if metrics improve)
+./scripts/promote.sh
+
+# 5. If promoted, restart ai_router
+docker compose -f compose/docker-compose.yaml restart ai_router
+```
+
+### 10.1.6 Promote Script
+
+`scripts/promote.sh` retrains with `train_candidate.csv`, compares accuracy
+to `metrics_before.json`, and promotes to `train.csv` only if metrics improve.
+No parameters. Run after refiner.
 
 ## 11. Demo Script
 
@@ -255,6 +379,9 @@ Run `./scripts/demo.sh --help` for full options.
 ./scripts/demo.sh test               # Run unit tests
 ./scripts/demo.sh test gateway       # Run gateway tests only
 ./scripts/demo.sh train              # Train model and reload ai_router
+./scripts/demo.sh refine             # Run refiner (after train)
+./scripts/demo.sh refine --limit 5   # Refine with row limit (faster)
+./scripts/demo.sh promote            # Promote candidate if metrics improve
 ```
 
 ## 12. Frontend GUI
@@ -278,15 +405,70 @@ Run `./scripts/demo.sh --help` for full options.
 5. For **unknown** (404): Message "Unable to determine a suitable backend."
 6. For **502/503**: Message "Service temporarily unavailable."
 
-## 13. Browser Demo Prompts
+## 13. Demo Prompts by Label
 
-| Prompt | Expected Route |
+40 example prompts for demos (10 per label). These are distinct from the
+training data in `services/trainer/train.csv`.
+
+### Search (10)
+
+| # | Text |
 | --- | --- |
-| compare nginx ingress vs traefik | search |
-| detect objects in an image and return labels | image |
-| kubectl pods CrashLoopBackOff, debug steps | ops |
-| hello | unknown (404) |
-| tell me a joke | unknown (404) |
+| 1 | what is exponential backoff in retries |
+| 2 | explain consensus algorithm in distributed systems |
+| 3 | how does consistent hashing work for load balancing |
+| 4 | what is eventual consistency in databases |
+| 5 | compare kafka vs rabbitmq for message queues |
+| 6 | what is a dead letter queue |
+| 7 | explain leader election in raft protocol |
+| 8 | what is database sharding |
+| 9 | how does bloom filter work |
+| 10 | what is circuit breaker in resilience patterns |
+
+### Image (10)
+
+| # | Text |
+| --- | --- |
+| 1 | redact sensitive information from a screenshot |
+| 2 | find text in a screenshot and highlight it |
+| 3 | create a collage from multiple photos |
+| 4 | apply vintage filter to portrait |
+| 5 | identify breed of dog from pet photo |
+| 6 | generate alt text for accessibility |
+| 7 | detect whether photo is indoors or outdoors |
+| 8 | estimate time of day from photo lighting |
+| 9 | identify landmarks in a vacation photo |
+| 10 | create thumbnail for video preview |
+
+### Ops (10)
+
+| # | Text |
+| --- | --- |
+| 1 | npm install fails with ENOENT - how to fix |
+| 2 | jest tests timeout in CI - increase timeout |
+| 3 | redis connection refused - firewall rules |
+| 4 | elasticsearch cluster yellow - replica allocation |
+| 5 | gunicorn workers dying - memory leak |
+| 6 | postgres deadlock - identify blocking queries |
+| 7 | kafka consumer lag increasing - scale consumers |
+| 8 | s3 multipart upload fails - retry strategy |
+| 9 | slack webhook returns 400 - payload format |
+| 10 | datadog metrics not appearing - agent config |
+
+### Unknown (10)
+
+| # | Text |
+| --- | --- |
+| 1 | good morning sunshine |
+| 2 | howdy partner |
+| 3 | what's for lunch |
+| 4 | i'm bored |
+| 5 | entertain me |
+| 6 | spin a yarn |
+| 7 | knock knock |
+| 8 | are we good |
+| 9 | right on |
+| 10 | all good |
 
 ## 14. Status Reference
 

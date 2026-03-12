@@ -86,3 +86,11 @@ Unknown (404) is distinguishable from backend failure (502).
 
 `docker compose up --build` succeeds; multi-stage Dockerfiles, Compose
 anchors/profiles, health checks implemented; all services log request_id.
+
+### Refiner Acceptance (REF-AC-001 to REF-AC-004)
+
+See [REFINER_PRD.md](docs/auxiliary/refiner/REFINER_PRD.md) for refiner
+acceptance criteria.
+Verification: `docker compose --profile refine run --rm refiner` succeeds when
+`misclassified.csv` exists and Ollama is healthy; proposal files and
+`train_candidate.csv` are produced; promote only when metrics improve.

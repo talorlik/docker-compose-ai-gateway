@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Demo script for Local AI Microservice Mesh (NFR-036)
-# Per PROJECT_PLAN Section 10 and docs/DEMO.md
+# Per PROJECT_PLAN Section 10 and docs/auxiliary/demo/DEMO.md
 
 set -e
 
@@ -15,7 +15,7 @@ Usage: demo.sh [command] [options...]
 
 Commands:
   build [SERVICE]     Build images. SERVICE: all (default), gateway, ai_router,
-                     search_service, image_service, ops_service, trainer
+                     search_service, image_service, ops_service, trainer, refiner
   run [--dev]        Start the stack (production). Use --dev for hot reload.
   start              Alias for run
   stop               Stop the stack (containers remain)
@@ -28,15 +28,21 @@ Commands:
   logs [SERVICE...]  Follow logs. Default: gateway ai_router search_service
   test [SERVICE]     Run unit tests. SERVICE: all (default), gateway, ai_router
   train              Train new model and reload ai_router
+  refine [--limit N]  Run refiner (produces train_candidate.csv). --limit N limits
+                     misclassified rows (faster runs).
+  promote            Retrain with candidate, promote to train.csv if metrics improve
   help, --help, -h    Show this help
 
 Options:
   --dev              With 'run': use dev overlay (hot reload)
   --scale N          With 'run': scale search_service to N replicas
+  --limit N          With 'refine': max misclassified rows to process (REFINER_LIMIT)
 
 Environment:
   GATEWAY_URL        Gateway base URL (default: http://localhost:8000)
   REQUESTS           With load-test: number of requests (default: 20)
+  REFINER_LIMIT      With refine: max rows to process (0 = no limit)
+  REFINER_BANNED_PATTERNS  With refine: comma-separated substrings to reject
 
 Examples:
   demo.sh                    # Show help (no default command)
@@ -57,8 +63,11 @@ Examples:
   demo.sh test               # Run all unit tests
   demo.sh test gateway       # Run gateway tests only
   demo.sh train              # Train model and reload ai_router
+  demo.sh refine             # Run refiner (after train)
+  demo.sh refine --limit 5   # Refine with row limit (faster)
+  demo.sh promote            # Promote candidate if metrics improve
 
-See docs/DEMO.md for full runbook.
+See docs/auxiliary/demo/DEMO.md for full runbook.
 EOF
 }
 
@@ -233,6 +242,32 @@ cmd_train() {
   echo "Verify: demo.sh curl"
 }
 
+cmd_refine() {
+  local limit=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit) limit="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  cd "$COMPOSE_DIR"
+  echo "Running refiner (requires Ollama)..."
+  if [[ -n "$limit" ]]; then
+    docker compose -f "$COMPOSE_FILE" --profile refine run --rm \
+      -e "REFINER_LIMIT=$limit" refiner
+  else
+    docker compose -f "$COMPOSE_FILE" --profile refine run --rm refiner
+  fi
+  echo ""
+  echo "Run demo.sh promote to retrain and promote if metrics improve"
+}
+
+cmd_promote() {
+  cd "$COMPOSE_DIR"
+  ./scripts/promote.sh
+}
+
 main() {
   local cmd="${1:-}"
   shift 2>/dev/null || true
@@ -277,6 +312,12 @@ main() {
       ;;
     train)
       cmd_train
+      ;;
+    refine)
+      cmd_refine "$@"
+      ;;
+    promote)
+      cmd_promote
       ;;
     *)
       echo "Unknown command: $cmd"

@@ -12,6 +12,8 @@ the exact path taken (application-level tracing) per action.
 - **Backends** (search, image, ops) simulate domain-specific responses
 - **Trainer** (optional profile) trains the classifier and writes the model
   artifact
+- **Refiner** (optional profile) improves the dataset via local LLM (Ollama);
+  promotes only when metrics improve
 
 All services run in Python (FastAPI) with Docker Compose. No external
 observability stack is required; tracing is application-level.
@@ -34,19 +36,30 @@ docker compose -f compose/docker-compose.yaml up --build -d
 docker compose -f compose/docker-compose.yaml --profile train run --rm trainer
 ```
 
-See [docs/DEMO.md](docs/DEMO.md) for full runbook, scaling, and failure demos.
+**Refine the dataset** (optional, after training):
+
+```bash
+docker compose -f compose/docker-compose.yaml --profile refine run --rm refiner
+./scripts/promote.sh
+```
+
+See [docs/auxiliary/demo/DEMO.md](docs/auxiliary/demo/DEMO.md) for full runbook,
+scaling, and failure demos.
 
 ## Documentation
 
 | Document | Description |
 | --- | --- |
-| [docs/PRD.md](docs/PRD.md) | Product requirements and functional specs |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, components, request flow |
-| [docs/TECHNICAL.md](docs/TECHNICAL.md) | Training pipeline, routing policy, model details |
-| [docs/DEMO.md](docs/DEMO.md) | Build, run, stop, scaling, and failure demos |
-| [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) | Acceptance criteria and verification |
-| [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | Project overview and technical requirements |
-| [docs/TASKS.md](docs/TASKS.md) | Actionable implementation tasks |
+| [docs/auxiliary/requirements/PRD.md](docs/auxiliary/requirements/PRD.md) | Product requirements and functional specs |
+| [docs/auxiliary/architecture/ARCHITECTURE.md](docs/auxiliary/architecture/ARCHITECTURE.md) | System design, components, request flow |
+| [docs/auxiliary/architecture/TECHNICAL.md](docs/auxiliary/architecture/TECHNICAL.md) | Training pipeline, routing policy, model details |
+| [docs/auxiliary/demo/DEMO.md](docs/auxiliary/demo/DEMO.md) | Build, run, stop, scaling, and failure demos |
+| [docs/auxiliary/requirements/ACCEPTANCE.md](docs/auxiliary/requirements/ACCEPTANCE.md) | Acceptance criteria and verification |
+| [docs/auxiliary/planning/PROJECT_PLAN.md](docs/auxiliary/planning/PROJECT_PLAN.md) | Project overview and technical requirements |
+| [docs/auxiliary/planning/TASKS.md](docs/auxiliary/planning/TASKS.md) | Actionable implementation tasks |
+| [docs/auxiliary/refiner/REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md) | Refiner conceptual overview |
+| [docs/auxiliary/refiner/REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md) | Refiner technical specification |
+| [docs/auxiliary/refiner/REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md) | Refiner end-to-end flow |
 
 ## Project Structure
 
@@ -54,5 +67,5 @@ See [docs/DEMO.md](docs/DEMO.md) for full runbook, scaling, and failure demos.
 compose/          # Docker Compose definitions
 services/         # Microservices (gateway, ai_router, search_service, etc.)
 scripts/          # Demo and load-test scripts
-docs/             # Project documentation
+docs/             # Project documentation (auxiliary/ for detailed docs)
 ```

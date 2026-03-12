@@ -64,12 +64,20 @@ health checks - see Section 9
 
 6. **trainer** (one-shot container, no FastAPI)
    - Runs on demand via `docker compose --profile train run --rm trainer`
-   - Self-contained: `train.py` and `train.csv` live in
-     `services/trainer/` and are baked into the image at build time
+   - `train.py` baked into image; `train.csv` mounted from host at runtime
    - Writes `model.joblib` to a shared volume, then exits
    - Separate from ai-router so inference stays small and stable
    - See Section 8.3 for Dockerfile, Section 9.3 for Compose
      configuration
+
+7. **refiner** (one-shot container, no FastAPI)
+   - Runs on demand via `docker compose --profile refine run --rm refiner`
+   - Analyzes `misclassified.csv` via local LLM (Ollama, Qwen2.5 7B-Instruct)
+   - Produces `train_candidate.csv`; promotion to `train.csv` only when metrics
+     improve (via `scripts/promote.sh`)
+   - See [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md),
+     [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md),
+     [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md)
 
 ### 2.2 Request Flow
 
@@ -224,8 +232,13 @@ docker-compose-ai-gateway/
 │   ├── demo.sh                      # Full demo sequence
 │   └── load_test.sh                 # Load testing script
 └── docs/
-    ├── architecture.md
-    └── demo.md                      # Demo instructions
+    └── auxiliary/
+        ├── architecture/            # ARCHITECTURE.md, TECHNICAL.md
+        ├── demo/                    # DEMO.md
+        ├── planning/                # PROJECT_PLAN.md, TASKS.md
+        ├── reference/               # METRICS_JSON.md
+        ├── refiner/                 # REFINER_*.md
+        └── requirements/            # PRD.md, ACCEPTANCE.md
 ```
 
 ## 4. Training Data Strategy
@@ -642,10 +655,10 @@ CMD ["gunicorn", "app.main:app", \
 
 ### 8.3 Trainer Dockerfile
 
-**Design:** Single-stage, self-contained image with training
-dependencies only (no FastAPI, no gunicorn). `train.py` and
-`train.csv` live in `services/trainer/` and are COPYed at build
-time. The trainer writes artifacts (`model.joblib`,
+**Design:** Single-stage image with training dependencies only (no
+FastAPI, no gunicorn). `train.py` is COPYed at build time; `train.csv`
+is mounted from the host at runtime. The trainer writes artifacts
+(`model.joblib`,
 `metrics.json`, `misclassified.csv`) into a named volume shared
 with ai-router. See Section 9.3 for the Compose configuration.
 
@@ -658,7 +671,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY train.py .
-COPY train.csv .
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -784,6 +796,7 @@ services:
     profiles:
       - train
     volumes:
+      - ../services/trainer/train.csv:/train/train.csv:ro
       - model_artifacts:/model
     environment:
       <<: *common-env
@@ -804,12 +817,13 @@ services:
 **Workflow:**
 
 1. Edit `services/trainer/train.csv` on the host.
-2. Rebuild the trainer image and run it:
-   `docker compose --profile train build trainer &&
-   docker compose --profile train run --rm trainer`.
-3. Restart ai-router: `docker compose restart ai_router`.
-4. The trainer image must be rebuilt when training data or
-   code changes because both are baked into the image.
+2. Run the trainer (no rebuild needed):
+   `docker compose --profile train run --rm trainer`.
+3. Optionally run the refiner: `docker compose --profile refine run --rm refiner`;
+   then `./scripts/promote.sh` to promote only if metrics improve.
+4. Restart ai-router: `docker compose restart ai_router`.
+5. Rebuild the trainer image only when `train.py` or `requirements.txt`
+   change; `train.csv` is mounted at runtime.
 
 **Model loading in ai-router:** At startup, load from `MODEL_PATH` env
 var if set and the file exists; otherwise fall back to the build-time
@@ -992,8 +1006,8 @@ new model loaded
 - [ ] Integration tests: full compose stack
 - [ ] `scripts/demo.sh` implements full demo sequence (see Section 10)
 - [ ] `scripts/load_test.sh` implements load testing
-- [ ] `docs/demo.md` with copy-paste commands
-- [ ] `docs/architecture.md` with system design
+- [ ] `docs/auxiliary/demo/DEMO.md` with copy-paste commands
+- [ ] `docs/auxiliary/architecture/ARCHITECTURE.md` with system design
 
 ## 12. Definition of Done
 
@@ -1011,7 +1025,7 @@ ops, unknown)
 - [ ] AI router loads pre-built model artifact
 - [ ] Compose fragments, anchors, and profiles are implemented and non-trivial
 - [ ] Health checks and conditional dependencies work correctly
-- [ ] `docs/demo.md` provides copy-paste commands for all demonstrations
+- [ ] `docs/auxiliary/demo/DEMO.md` provides copy-paste commands for all demonstrations
 - [ ] All services log `request_id` for correlation
 - [ ] Unknown route returns 404-equivalent response without backend call
 - [ ] Confidence thresholding prevents low-confidence routing
@@ -1055,9 +1069,16 @@ trainer` and ai-router loads new artifact after restart
 6. **Confidence thresholding**: Prevents forced misrouting
 7. **Application tracing**: No observability stack dependency
 
-### 13.3 Future Enhancements (Optional)
+### 13.3 Refiner and Dataset Improvement
 
-- Explicit `unknown` label training refinement
+The refiner service automates dataset improvement using a local LLM. See
+[REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md),
+[REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md),
+[REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md).
+
+### 13.4 Future Enhancements (Optional)
+
+- Evaluator and promoter services (beyond scripts/promote.sh)
 - Enhanced explanations (top n-grams with weights)
 - Request replay endpoint for debugging
 - Metrics endpoint for gateway (request rate, latency per route)
@@ -1085,6 +1106,16 @@ docker compose -f compose/docker-compose.yaml \
   --profile train run --rm trainer
 docker compose -f compose/docker-compose.yaml restart ai_router
 ```
+
+### Refine Dataset (Optional)
+
+```bash
+docker compose -f compose/docker-compose.yaml --profile refine run --rm refiner
+./scripts/promote.sh
+docker compose -f compose/docker-compose.yaml restart ai_router
+```
+
+See [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md).
 
 ### Scale Service
 

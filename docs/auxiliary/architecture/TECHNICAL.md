@@ -104,7 +104,9 @@ Use misclassifications to tune gateway policy: if many wrong routes occur at
 
 **Minimum practical usage:** Keep `model.joblib`, glance at `metrics.json`, and
 optionally ignore `misclassified.csv`. For a solid router, use
-`misclassified.csv` to refine data and thresholds.
+`misclassified.csv` to refine data and thresholds. For automated refinement
+via a local LLM, see [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md)
+and [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md).
 
 ## 4. Iteration Cycle (Data → Retrain → Evaluate → Policy)
 <!-- TASKS: 6.11 -->
@@ -129,7 +131,8 @@ calibration, and unknown behavior. Nothing else in the system needs to change.
 
 **Practical workflow:** Keep `train.csv` in git; do not commit `model.joblib`
 until satisfied; then commit the final artifact. Docker build uses that
-artifact.
+artifact. For automated refinement (refiner + promote), see
+[REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md).
 
 ## 5. Threshold and Margin: Two Different Loops
 <!-- TASKS: 4.3, 8.6 -->
@@ -239,10 +242,9 @@ services/trainer/
   train.csv
 ```
 
-The trainer is self-contained: training code (`train.py`) and data
-(`train.csv`) live in its own directory and are included in the Docker
-image at build time. No files are shared with or bind-mounted from the
-ai_router service.
+The trainer uses `train.py` (baked into the image) and `train.csv`
+(mounted from the host at runtime). Both live in `services/trainer/`.
+Edits to `train.csv` take effect without rebuilding the trainer image.
 
 ### 7.2 Trainer Dockerfile
 
@@ -257,7 +259,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY train.py .
-COPY train.csv .
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -297,6 +298,7 @@ services:
     profiles:
       - train
     volumes:
+      - ../services/trainer/train.csv:/train/train.csv:ro
       - model_artifacts:/model
     environment:
       <<: *common-env
@@ -324,9 +326,9 @@ Key points:
 - **Named volume `model_artifacts`:** Trainer writes, ai-router reads.
   Survives container restarts; artifacts persist until the volume is
   removed.
-- **Baked-in code and data:** `train.py` and `train.csv` are copied
-  into the trainer image at build time. To change training data, edit
-  `services/trainer/train.csv` and rebuild the trainer image.
+- **Code and data:** `train.py` is baked into the image; `train.csv` is
+  mounted from the host at runtime. To change training data, edit
+  `services/trainer/train.csv` and run the trainer again (no rebuild).
 
 ### 7.4 Running the Trainer
 
@@ -402,8 +404,8 @@ admin action. If reload is not needed, skip this and use `restart`.
 
 Complete loop integrating Sections 4, 7.4, and 7.5:
 
-1. Edit `services/trainer/train.csv` and rebuild the trainer image.
-2. Run the trainer:
+1. Edit `services/trainer/train.csv` on the host.
+2. Run the trainer (no rebuild needed):
 
    ```bash
    docker compose -f compose/docker-compose.yaml \
@@ -448,6 +450,12 @@ The trainer produces `model.joblib` which can be used two ways:
 image (artifact baked in), or (2) write to the shared volume and
 restart ai_router (no rebuild). Choose based on whether you want the
 artifact in the image or loaded from a volume.
+
+**Refiner workflow:** After training, run the refiner to analyze
+`misclassified.csv` and produce `train_candidate.csv`; then run
+`scripts/promote.sh` to promote only if metrics improve. See
+[REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md) and
+[REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md).
 
 ## 8. Explanation Token Extraction
 <!-- TASKS: 2.5 -->
@@ -1637,3 +1645,15 @@ but via log aggregation rather than the API response.
 | 8.4 | 19.2, 19.3 | Backend and AI router failure handling |
 | 8.5 | 19.4 | Error scenario summary table |
 | 8.6 | 5.2, 6 | Margin tuning and threshold implementation |
+
+### 21.3 Refiner Cross-References
+
+The refiner service (offline dataset improvement via local LLM) is documented
+separately. See:
+
+- [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md) - Conceptual overview
+- [REFINER_PRD.md](docs/auxiliary/refiner/REFINER_PRD.md) - Requirements
+- [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md) - Technical
+specification
+- [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md) - End-to-end flow
+- [REFINER_TASKS.md](docs/auxiliary/refiner/REFINER_TASKS.md) - Implementation tasks

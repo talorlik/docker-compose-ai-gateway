@@ -71,9 +71,15 @@ system with AI-driven request routing and application-level tracing.
 | FR-011 | An **image-service** (FastAPI) SHALL expose `POST /handle` and simulate image-related request handling. | Must |
 | FR-012 | An **ops-service** (FastAPI) SHALL expose `POST /handle` and simulate DevOps/infrastructure troubleshooting responses. | Must |
 | FR-080 | A **trainer** service SHALL be a one-shot container that runs `train.py`, writes `model.joblib` to a shared volume, and exits. | Must |
-| FR-081 | The trainer service SHALL be self-contained: `train.py` and `train.csv` SHALL live in `services/trainer/` and be included in the trainer Docker image at build time. | Must |
+| FR-081 | The trainer service SHALL use `train.py` (baked into the image) and `train.csv` (mounted from `services/trainer/` at runtime); both SHALL live in `services/trainer/`. | Must |
 | FR-082 | The ai-router SHALL support loading model artifacts from a shared volume path specified by `MODEL_PATH` env var, falling back to the build-time artifact. | Must |
 | FR-083 | The ai-router MAY expose `POST /reload-model` for hot-reload of the model without container restart. | Should |
+| FR-084 | A **refiner** service SHALL improve the training dataset by analyzing misclassified rows via a local LLM (Ollama). | Must |
+| FR-085 | The refiner SHALL run on demand via `docker compose --profile refine run --rm refiner`; it SHALL NOT start with default `docker compose up`. | Must |
+| FR-086 | The refiner SHALL produce `train_candidate.csv`; promotion to `train.csv` SHALL occur only when retraining improves metrics (via `scripts/promote.sh`). | Must |
+
+See [REFINER_PRD.md](docs/auxiliary/refiner/REFINER_PRD.md) for full refiner
+requirements.
 
 ### 4.2 Request Flow
 
@@ -139,11 +145,11 @@ system with AI-driven request routing and application-level tracing.
 
 | ID | Requirement | Priority |
 | --- | --- | --- |
-| NFR-009 | The repository SHALL follow the structure defined in the project plan (compose/, services/, scripts/, docs/). | Must |
+| NFR-009 | The repository SHALL follow the structure defined in the project plan (compose/, services/, scripts/, docs/auxiliary/). | Must |
 | NFR-010 | Each service SHALL have its own directory under `services/` with Dockerfile, requirements.txt, app/, and tests/ where specified. | Must |
 | NFR-011 | Compose files SHALL reside in `compose/` (docker-compose.yaml base, docker-compose.dev.yaml for dev profile). | Must |
 | NFR-012 | Demo and load-test scripts SHALL reside in `scripts/` (demo.sh, load_test.sh). | Must |
-| NFR-013 | Documentation SHALL include architecture and demo instructions in `docs/`. | Must |
+| NFR-013 | Documentation SHALL include architecture and demo instructions in `docs/auxiliary/`. | Must |
 
 ## 8. Training Data Requirements
 
@@ -276,7 +282,7 @@ system with AI-driven request routing and application-level tracing.
 | --- | --- | --- |
 | NFR-041 | The trainer SHALL have its own directory `services/trainer/` with Dockerfile and requirements.txt. | Must |
 | NFR-042 | The trainer Dockerfile SHALL be single-stage (no runtime server); only training dependencies (scikit-learn, numpy, joblib). | Must |
-| NFR-043 | The trainer SHALL include `train.py` and `train.csv` in its Docker image at build time; the trainer is self-contained. | Must |
+| NFR-043 | The trainer SHALL include `train.py` in its Docker image at build time; `train.csv` SHALL be mounted from the host at runtime. | Must |
 
 ### 12.4 Dev Target
 
@@ -304,16 +310,26 @@ system with AI-driven request routing and application-level tracing.
 | NFR-030 | Services SHALL support horizontal scaling (e.g., docker compose up --scale search-service=3). | Must |
 | NFR-031 | Gateway SHALL distribute requests across scaled backend replicas (e.g., round-robin at DNS or load balancer). | Must |
 
-### 13.3 Trainer Profile and Shared Volume
+### 13.3 Refiner Profile
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| NFR-048 | Compose SHALL define a `refine` profile containing the refiner and ollama services; they SHALL NOT start with default `docker compose up`. | Must |
+| NFR-049 | The refiner SHALL depend on Ollama with `condition: service_healthy` and mount the shared `model_artifacts` volume. | Must |
+
+See [REFINER_PRD.md](docs/auxiliary/refiner/REFINER_PRD.md) and
+[REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md).
+
+### 13.4 Trainer Profile and Shared Volume
 
 | ID | Requirement | Priority |
 | --- | --- | --- |
 | NFR-044 | Compose SHALL define a `train` profile containing the trainer service; the trainer SHALL NOT start with default `docker compose up`. | Must |
 | NFR-045 | Compose SHALL define a named volume `model_artifacts` shared between the trainer (read-write) and ai-router (read-only). | Must |
-| NFR-046 | The trainer SHALL use `train.py` and `train.csv` from its own build context (`services/trainer/`); no bind-mounts from other services are required. | Must |
+| NFR-046 | The trainer SHALL use `train.py` from its build context and `train.csv` via a bind mount from `services/trainer/`; edits to `train.csv` take effect without rebuilding. | Must |
 | NFR-047 | Training SHALL be triggered via `docker compose --profile train run --rm trainer`; ai-router SHALL reload the new model after `docker compose restart ai_router`. | Must |
 
-### 13.4 Dev Profile
+### 13.5 Dev Profile
 
 | ID | Requirement | Priority |
 | --- | --- | --- |
@@ -356,8 +372,8 @@ system with AI-driven request routing and application-level tracing.
 
 | ID | Requirement | Priority |
 | --- | --- | --- |
-| NFR-034 | `docs/demo.md` SHALL provide copy-paste commands for browser, curl, scaling, and failure demos. | Must |
-| NFR-035 | `docs/architecture.md` SHALL describe system design and request flow. | Must |
+| NFR-034 | `docs/auxiliary/demo/DEMO.md` SHALL provide copy-paste commands for browser, curl, scaling, and failure demos. | Must |
+| NFR-035 | `docs/auxiliary/architecture/ARCHITECTURE.md` SHALL describe system design and request flow. | Must |
 | NFR-036 | `scripts/demo.sh` SHALL implement the full demo sequence as specified in the project plan. | Must |
 | NFR-037 | `scripts/load_test.sh` SHALL implement load testing for scaling verification. | Must |
 
@@ -389,15 +405,26 @@ system with AI-driven request routing and application-level tracing.
 | Category | Count | IDs |
 | --- | --- | --- |
 | Business | 8 | BR-001 to BR-008 |
-| Functional | 83 | FR-001 to FR-083 |
-| Non-Functional | 47 | NFR-001 to NFR-047 |
+| Functional | 86 | FR-001 to FR-086 |
+| Non-Functional | 49 | NFR-001 to NFR-049 |
 | Acceptance / DoD | 18 | AC-001 to AC-010, DoD-001 to DoD-008 |
 
-## 18. Optional / Future Enhancements
+## 18. Refiner and Dataset Improvement
+
+The refiner service automates dataset improvement using a local LLM. See:
+
+- [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md) - Conceptual overview
+and workflow
+- [REFINER_PRD.md](docs/auxiliary/refiner/REFINER_PRD.md) - Requirements
+- [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md) - Technical
+specification
+- [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md) - End-to-end flow
+- [REFINER_TASKS.md](docs/auxiliary/refiner/REFINER_TASKS.md) - Implementation tasks
+
+## 19. Optional / Future Enhancements
 
 The following are out of scope for the current release but may be considered later:
 
-- Explicit unknown-label training refinement
 - Enhanced explanations (top n-grams with weights)
 - Request replay endpoint for debugging
 - Metrics endpoint (request rate, latency per route)

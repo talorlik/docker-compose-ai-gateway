@@ -1,12 +1,14 @@
 # Actionable Tasks: Local AI Microservice Mesh
 
-Step-by-step tasks derived from [PRD.md](PRD.md). Execute by batch: e.g.
+Step-by-step tasks derived from [PRD.md](docs/auxiliary/requirements/PRD.md).
+Execute by batch: e.g.
 "Do batch 1," then "Do batch 2." Tasks are small to medium and ordered
 from foundation up.
 
 > [!TIP]
 > The **Tech spec** column references sections in
-> [TECHNICAL.md](TECHNICAL.md) using the format `TECH-{section}`.
+> [TECHNICAL.md](docs/auxiliary/architecture/TECHNICAL.md) using the format
+> `TECH-{section}`.
 > When actioning a task, read the referenced section(s) for
 > implementation details, code snippets, and design decisions.
 > A dash (`-`) means no specific technical section applies.
@@ -18,7 +20,7 @@ services with health checks.
 
 | # | Task | PRD refs | Tech spec | Done |
 | --- | --- | --- | --- | --- |
-| 1.1 | Create directory structure: `compose/`, `services/gateway/`, `services/ai_router/`, `services/search_service/`, `services/image_service/`, `services/ops_service/`, `scripts/`, `docs/`. | NFR-009 | - | x |
+| 1.1 | Create directory structure: `compose/`, `services/gateway/`, `services/ai_router/`, `services/search_service/`, `services/image_service/`, `services/ops_service/`, `scripts/`, `docs/auxiliary/`. | NFR-009 | - | x |
 | 1.2 | Create `compose/docker-compose.yaml` with anchors: `x-common-env`, `x-common-healthcheck`, `x-common-logging` (no services yet). | NFR-024, NFR-026 | TECH-16 | x |
 | 1.3 | Add gateway service: `services/gateway/` with `Dockerfile` (multi-stage, Python 3.12-slim), `requirements.txt` (fastapi, uvicorn), `app/main.py` exposing `GET /` (placeholder) and `GET /health` returning 200. | FR-001, NFR-014, NFR-015, FR-060 | TECH-14.1 | x |
 | 1.4 | Add ai_router service skeleton: same pattern (Dockerfile, requirements.txt, app/main.py) with `GET /health` only. | NFR-010, FR-063 | TECH-1, TECH-12 | x |
@@ -97,7 +99,7 @@ health-based startup, and scaling.
 | 6.5 | Gateway `depends_on` with condition: service_healthy for ai-router and all three backends. | NFR-029 | TECH-16.1 | x |
 | 6.6 | Verify scaling: `docker compose up --scale search-service=3`; ensure gateway can reach replicas (Compose DNS round-robin or equivalent). | NFR-030, NFR-031, AC-007 | TECH-18 | x |
 | 6.7 | Create `services/trainer/` with `Dockerfile` (single-stage, Python 3.12-slim, training deps only) and `requirements.txt` (scikit-learn, numpy, joblib). | NFR-041, NFR-042 | TECH-7.1, TECH-7.2 | x |
-| 6.8 | Add `trainer` service to `compose/docker-compose.yaml` with profile `train`; trainer image is self-contained with `train.py` and `train.csv` baked in; mount `model_artifacts` volume at `/model/`. | NFR-043, NFR-044, NFR-046 | TECH-7.3 | x |
+| 6.8 | Add `trainer` service to `compose/docker-compose.yaml` with profile `train`; trainer image has `train.py` baked in; `train.csv` mounted from host; mount `model_artifacts` volume at `/model/`. | NFR-043, NFR-044, NFR-046 | TECH-7.3 | x |
 | 6.9 | Add named volume `model_artifacts` in Compose; mount read-write in trainer, read-only in ai_router; set `MODEL_PATH=/model/model.joblib` env var on ai_router. | NFR-045, FR-082 | TECH-7.3 | x |
 | 6.10 | Update ai-router startup to load model from `MODEL_PATH` if set and exists, otherwise fall back to build-time artifact; fail fast if neither found. | FR-082 | TECH-7.5 | x |
 | 6.11 | Verify retrain-and-reload workflow: `docker compose --profile train run --rm trainer` produces artifacts; `docker compose restart ai_router` loads new model; curl confirms updated predictions. | NFR-047, FR-080 | TECH-4, TECH-7.4, TECH-7.7 | x |
@@ -111,8 +113,8 @@ demo commands.
 | --- | --- | --- | --- | --- |
 | 7.1 | Implement `scripts/demo.sh`: start stack, optional browser/curl examples for search, image, ops, unknown; scaling and failure demos as per project plan. | NFR-036 | - | x |
 | 7.2 | Implement `scripts/load_test.sh`: send multiple requests to gateway, optionally with scaled backends; document how to verify distribution. | NFR-037, AC-007 | TECH-18.3 | x |
-| 7.3 | Write `docs/DEMO.md`: copy-paste commands for browser, curl, scaling, and failure demos. | NFR-034 | - | x |
-| 7.4 | Write `docs/ARCHITECTURE.md`: system design, request flow, and component roles. | NFR-035 | - | x |
+| 7.3 | Write `docs/auxiliary/demo/DEMO.md`: copy-paste commands for browser, curl, scaling, and failure demos. | NFR-034 | - | x |
+| 7.4 | Write `docs/auxiliary/architecture/ARCHITECTURE.md`: system design, request flow, and component roles. | NFR-035 | - | x |
 
 ## Batch 8: Acceptance and Failure Scenarios
 
@@ -144,3 +146,10 @@ behavior.
 
 Use this document to drive implementation: complete a batch, then say
 "Do batch N" to proceed to the next.
+
+## Refiner Tasks
+
+Refiner service tasks (Ollama, relabel pipeline, augmentation, promote) are
+documented in [REFINER_TASKS.md](docs/auxiliary/refiner/REFINER_TASKS.md). Run
+trainer first, then
+refiner, then promote.

@@ -3,6 +3,7 @@
 
 volumes:
   model_artifacts:
+  ollama_data:
 
 x-common-env: &common-env
   LOG_LEVEL: info
@@ -110,8 +111,55 @@ services:
     profiles:
       - train
     volumes:
+      - ../services/trainer/train.csv:/train/train.csv:ro
       - model_artifacts:/model
     environment:
       <<: *common-env
+    logging:
+      <<: *common-logging
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    profiles:
+      - refine
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "ollama serve &
+       sleep 5 &&
+       ollama pull qwen2.5:7b-instruct &&
+       wait"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ollama list | grep -q qwen2.5:7b-instruct"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 600s
+    restart: unless-stopped
+    logging:
+      <<: *common-logging
+
+  refiner:
+    build:
+      context: ../services/refiner
+      dockerfile: Dockerfile
+    profiles:
+      - refine
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: qwen2.5:7b-instruct
+    volumes:
+      # Shared volume: trainer writes to /model; refiner reads from /data
+      - model_artifacts:/data
+      # Host mount: train.csv read-only; refiner writes train_candidate.csv
+      - ../services/trainer/train.csv:/data/train.csv:ro
     logging:
       <<: *common-logging

@@ -116,12 +116,11 @@ def _build_vectorizer(cfg: TrainConfig) -> TfidfVectorizer:
 
 
 def _build_model(cfg: TrainConfig) -> LogisticRegression:
-    # multinomial + lbfgs supports predict_proba for multiclass; random_state for reproducibility
+    # lbfgs with multinomial is the default from sklearn 1.5+; random_state for reproducibility
     return LogisticRegression(
         C=cfg.C,
         max_iter=cfg.max_iter,
         solver="lbfgs",
-        multi_class="multinomial",
         class_weight=cfg.class_weight,
         n_jobs=None,
         random_state=cfg.random_state,
@@ -215,7 +214,6 @@ def train(cfg: TrainConfig) -> Dict:
                 "C": cfg.C,
                 "max_iter": cfg.max_iter,
                 "solver": "lbfgs",
-                "multi_class": "multinomial",
                 "class_weight": cfg.class_weight,
             },
             "metrics": {
