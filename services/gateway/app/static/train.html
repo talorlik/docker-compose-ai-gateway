@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Train - AI Router Gateway</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/train.css">
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>AI Router Gateway</h1>
+      <p class="subtitle">Run the router training job and view metrics</p>
+      <nav class="main-nav" aria-label="Main">
+        <a href="/" id="nav-query" class="nav-link">Query</a>
+        <span class="nav-sep">|</span>
+        <a href="/train" id="nav-train" class="nav-link current">Train</a>
+        <span class="nav-sep">|</span>
+        <a href="/refine" id="nav-refine" class="nav-link">Refine</a>
+      </nav>
+    </header>
+
+    <section id="train-section" class="train-section">
+      <h2>Train</h2>
+      <p class="section-desc">Run the router training job and view metrics.</p>
+      <div class="train-actions">
+        <button type="button" id="train-run-btn" class="action-btn">Run training</button>
+        <button type="button" id="train-last-btn" class="action-btn action-btn-secondary">Load last run</button>
+      </div>
+      <div id="train-progress" class="progress-wrap hidden" role="status" aria-live="polite">
+        <div class="progress-bar progress-bar-indeterminate"></div>
+        <span class="progress-label">Running...</span>
+      </div>
+      <div id="train-message" class="message-area hidden"></div>
+      <div id="train-metrics" class="metrics-placeholder placeholder-box hidden">
+        <h3>Metrics</h3>
+        <p class="placeholder-text">Accuracy and classification report will appear here.</p>
+        <div id="train-metrics-content"></div>
+      </div>
+      <div id="train-misclassified" class="table-placeholder placeholder-box hidden">
+        <h3>Misclassified</h3>
+        <p class="placeholder-text">Misclassified rows table will appear here.</p>
+        <div id="train-misclassified-content" class="data-table-wrap"></div>
+      </div>
+    </section>
+  </main>
+  <div id="probs-modal-overlay" class="probs-modal-overlay hidden" aria-hidden="true">
+    <div id="probs-modal" class="probs-modal">
+      <div class="probs-modal-header">
+        <span class="probs-modal-title">Probs (JSON)</span>
+        <button type="button" id="probs-modal-close" class="probs-modal-close" aria-label="Close">&#215;</button>
+      </div>
+      <pre id="probs-modal-body" class="probs-modal-body"></pre>
+      <div id="probs-modal-resize" class="probs-modal-resize" aria-hidden="true"></div>
+    </div>
+  </div>
+  <script src="/static/train.js"></script>
+</body>
+</html>

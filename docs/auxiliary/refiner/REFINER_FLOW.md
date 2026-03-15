@@ -88,7 +88,9 @@ REFINER_TECHNICAL, REFINER_PRD, and METRICS_JSON specifications.
    - Verify Ollama connectivity
    - **Relabel**: For each misclassified row, call LLM; propose corrected label
    - **Augment**: For each label needing improvement (from misclassified +
-     weak recall from metrics + confusion patterns), generate min 25 examples
+     weak recall from metrics + confusion patterns), generate min 5 examples
+     (AUGMENT_MIN_PER_LABEL=5, max 2 LLM attempts per label). Labels with
+     >= 150 existing training rows (AUGMENT_SKIP_THRESHOLD) skip augmentation
    - Filter: dedupe, min length
    - Merge relabels and examples into train_candidate.csv
    - Save metrics_before.json for promote comparison
@@ -122,7 +124,7 @@ REFINER_TECHNICAL, REFINER_PRD, and METRICS_JSON specifications.
 # 1. Train
 docker compose -f compose/docker-compose.yaml --profile train run --rm trainer
 
-# 2. Refine (requires Ollama; first run pulls qwen2.5:7b-instruct)
+# 2. Refine (requires Ollama; first run pulls phi3:mini)
 docker compose -f compose/docker-compose.yaml --profile refine run --rm refiner
 
 # 3. Promote only if metrics improve
@@ -144,15 +146,16 @@ Or via demo.sh:
 
 | Decision | Condition | Action |
 | -------- | --------- | ------ |
-| Labels to augment | Labels in misclassified OR recall < 0.75 OR confusion count >= 10 | Generate min 25 examples per label |
+| Labels to augment | Labels in misclassified OR recall < 0.75 OR confusion count >= 10; skip if label has >= 150 training rows | Generate min 5 examples per label (max 2 LLM attempts) |
 | Promote candidate | candidate_accuracy > previous_accuracy | Copy to train.csv, promote model |
 | Discard candidate | candidate_accuracy <= previous_accuracy | Keep train.csv and model.joblib |
 
 ## 6. Final train.csv Contents (When Promoted)
 
 1. **Post-refined original content**: Relabels applied to misclassified rows
-2. **Additional synthetic examples per label**: Min 25 per label that needed
-   improvement (from misclassified, weak recall, or confusion patterns)
+2. **Additional synthetic examples per label**: Min 5 per label that needed
+   improvement (from misclassified, weak recall, or confusion patterns);
+   labels with >= 150 existing rows skip augmentation entirely
 
 ## 7. Cross-References
 

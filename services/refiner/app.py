@@ -40,7 +40,7 @@ from prompts import (
 )
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi3:mini")
 OLLAMA_TIMEOUT = 300
 
 
@@ -52,14 +52,18 @@ def _get_row_limit() -> int:
     except ValueError:
         return 0
 
-TRAIN_PATH = "/data/train.csv"
-MISCLASSIFIED_PATH = "/data/misclassified.csv"
-METRICS_PATH = "/data/metrics.json"
-OUT_RELABELS = "/data/proposed_relabels.csv"
-OUT_EXAMPLES = "/data/proposed_examples.csv"
-OUT_REPORT = "/data/refinement_report.json"
-TRAIN_CANDIDATE_PATH = "/data/train_candidate.csv"
-METRICS_BEFORE_PATH = "/data/metrics_before.json"
+# Paths configurable via env so refiner can be run from training-api (no Docker).
+_REFINER_DATA_DIR = os.environ.get("REFINER_DATA_DIR", "/data")
+_REFINER_TRAIN_PATH = os.environ.get("REFINER_TRAIN_PATH", os.path.join(_REFINER_DATA_DIR, "train.csv"))
+
+TRAIN_PATH = _REFINER_TRAIN_PATH
+MISCLASSIFIED_PATH = os.path.join(_REFINER_DATA_DIR, "misclassified.csv")
+METRICS_PATH = os.path.join(_REFINER_DATA_DIR, "metrics.json")
+OUT_RELABELS = os.path.join(_REFINER_DATA_DIR, "proposed_relabels.csv")
+OUT_EXAMPLES = os.path.join(_REFINER_DATA_DIR, "proposed_examples.csv")
+OUT_REPORT = os.path.join(_REFINER_DATA_DIR, "refinement_report.json")
+TRAIN_CANDIDATE_PATH = os.path.join(_REFINER_DATA_DIR, "train_candidate.csv")
+METRICS_BEFORE_PATH = os.path.join(_REFINER_DATA_DIR, "metrics_before.json")
 
 TRAIN_REQUIRED = {"text", "label"}
 MISCLASSIFIED_REQUIRED = {"text", "true_label", "pred_label"}
@@ -80,7 +84,9 @@ def _log(level: str, msg: str, **kwargs: object) -> None:
     print(json.dumps(record), file=sys.stderr)
 
 
-AUGMENT_MIN_PER_LABEL = 25
+AUGMENT_MIN_PER_LABEL = 5
+AUGMENT_MAX_ATTEMPTS = 2
+AUGMENT_SKIP_THRESHOLD = 150
 WEAK_RECALL_THRESHOLD = 0.75
 CONFUSION_COUNT_THRESHOLD = 10
 
@@ -265,6 +271,8 @@ def main() -> int:
     try:
         _ = ask_ollama(connectivity_check(), system=SYSTEM_INSTRUCTIONS)
     except requests.RequestException as e:
+        _log("error", "ollama_unreachable", host=OLLAMA_HOST, detail=str(e))
+        print("Ollama is not available. Ensure the stack is running with Ollama.", file=sys.stderr)
         print(f"Ollama unreachable at {OLLAMA_HOST}: {e}", file=sys.stderr)
         return 1
 
@@ -317,20 +325,27 @@ def main() -> int:
             _log("warn", "row skipped", idx=idx, error=str(e))
             errors += 1
 
-    # Augmentation: generate at least 25 examples per label that needs it
+    # Augmentation: generate examples per label that needs it.
     # Uses metrics.json to detect weak labels (recall < 0.75) and confusion
-    # patterns; metrics.json is NOT used to change labels directly
+    # patterns; metrics.json is NOT used to change labels directly.
+    # Labels with >= AUGMENT_SKIP_THRESHOLD existing examples are skipped.
     labels_to_augment = _get_labels_to_augment(misclassified_df, metrics)
+    label_counts = train_df["label"].astype(str).str.strip().value_counts().to_dict()
     existing_texts = set(train_df["text"].astype(str).str.strip())
     banned = _get_banned_patterns()
     for label in labels_to_augment:
         if label not in ("search", "image", "ops", "unknown"):
             continue
-        _log("info", "augmenting label", label=label, min_per_label=AUGMENT_MIN_PER_LABEL)
+        current_count = label_counts.get(label, 0)
+        if current_count >= AUGMENT_SKIP_THRESHOLD:
+            _log("info", "augmentation skipped", label=label, current_count=current_count,
+                 threshold=AUGMENT_SKIP_THRESHOLD)
+            continue
+        _log("info", "augmenting label", label=label, min_per_label=AUGMENT_MIN_PER_LABEL,
+             current_count=current_count)
         collected: list[dict] = []
         attempts = 0
-        max_attempts = 5
-        while len(collected) < AUGMENT_MIN_PER_LABEL and attempts < max_attempts:
+        while len(collected) < AUGMENT_MIN_PER_LABEL and attempts < AUGMENT_MAX_ATTEMPTS:
             attempts += 1
             try:
                 needed = AUGMENT_MIN_PER_LABEL - len(collected)

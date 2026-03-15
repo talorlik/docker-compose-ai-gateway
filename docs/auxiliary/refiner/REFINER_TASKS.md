@@ -19,8 +19,8 @@ Foundation: Compose services, volumes, profiles.
 
 | ID | Task | Acceptance | Done |
 | -- | ---- | ---------- | ---- |
-| 1.1 | Add or verify `ollama` service in `compose/docker-compose.yaml`: image `ollama/ollama:latest`, profile `refine`, port 11434, volume `ollama_data`, entrypoint that runs `ollama serve` and `ollama pull qwen2.5:7b-instruct`. | `docker compose --profile refine up ollama -d` starts Ollama. | x |
-| 1.2 | Add or verify `ollama` healthcheck: `ollama list \| grep -q qwen2.5:7b-instruct`, interval 30s, start_period 600s. | Refiner can depend on `condition: service_healthy`. | x |
+| 1.1 | Add or verify `ollama` service in `compose/docker-compose.yaml`: image `ollama/ollama:latest`, profile `refine`, port 11434, volume `ollama_data`, entrypoint that runs `ollama serve` and `ollama pull phi3:mini`. | `docker compose --profile refine up ollama -d` starts Ollama. | x |
+| 1.2 | Add or verify `ollama` healthcheck: `ollama list \| grep -q phi3:mini`, interval 30s, start_period 600s. | Refiner can depend on `condition: service_healthy`. | x |
 | 1.3 | Add or verify `refiner` service: profile `refine`, depends_on ollama with `condition: service_healthy`, env `OLLAMA_HOST`, `OLLAMA_MODEL`, volume `model_artifacts:/data`. | `docker compose --profile refine run --rm refiner` can run after ollama is healthy. | x |
 | 1.4 | Ensure `model_artifacts` volume exists and trainer writes `misclassified.csv` to it. | After `trainer` run, `/model/misclassified.csv` (or equivalent) exists in the volume. | x |
 

@@ -106,7 +106,9 @@ Use misclassifications to tune gateway policy: if many wrong routes occur at
 optionally ignore `misclassified.csv`. For a solid router, use
 `misclassified.csv` to refine data and thresholds. For automated refinement
 via a local LLM, see [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md)
-and [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md).
+and [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md). For
+train/refine/promote (training-api), see
+[TRAIN_AND_REFINE_GUI_PAGES_TECH.md](TRAIN_AND_REFINE_GUI_PAGES_TECH.md).
 
 ## 4. Iteration Cycle (Data → Retrain → Evaluate → Policy)
 <!-- TASKS: 6.11 -->

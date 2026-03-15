@@ -42,12 +42,15 @@ services:
         condition: service_healthy
       ops_service:
         condition: service_healthy
+      training-api:
+        condition: service_healthy
     environment:
       <<: *common-env
       AI_ROUTER_URL: "http://ai_router:8000"
       SEARCH_SERVICE_URL: "http://search_service:8000"
       IMAGE_SERVICE_URL: "http://image_service:8000"
       OPS_SERVICE_URL: "http://ops_service:8000"
+      TRAINING_API_URL: "http://training-api:8000"
       T_ROUTE: "0.60"
       T_MARGIN: "0.10"
     healthcheck:
@@ -121,8 +124,6 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
-    profiles:
-      - refine
     ports:
       - "11434:11434"
     volumes:
@@ -131,10 +132,10 @@ services:
     command: >
       "ollama serve &
        sleep 5 &&
-       ollama pull qwen2.5:7b-instruct &&
+       ollama pull phi3:mini &&
        wait"
     healthcheck:
-      test: ["CMD", "sh", "-c", "ollama list | grep -q qwen2.5:7b-instruct"]
+      test: ["CMD", "sh", "-c", "ollama list | grep -q phi3:mini"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -155,11 +156,43 @@ services:
     environment:
       <<: *common-env
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: qwen2.5:7b-instruct
+      OLLAMA_MODEL: phi3:mini
     volumes:
       # Shared volume: trainer writes to /model; refiner reads from /data
       - model_artifacts:/data
       # Host mount: train.csv read-only; refiner writes train_candidate.csv
       - ../services/trainer/train.csv:/data/train.csv:ro
+    logging:
+      <<: *common-logging
+
+  redis:
+    image: redis:7-alpine
+    logging:
+      <<: *common-logging
+
+  training-api:
+    build:
+      context: ../services/training-api
+      dockerfile: Dockerfile
+    depends_on:
+      redis:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      REDIS_URL: "redis://redis:6379/0"
+      COMPOSE_WORKING_DIR: /workspace
+      MODEL_ARTIFACTS_PATH: /model
+      PROMOTE_TARGET_PATH: /promote_target
+      OLLAMA_HOST: "http://ollama:11434"
+      OLLAMA_MODEL: "phi3:mini"
+      REFINER_LIMIT: "5"
+    volumes:
+      - ..:/workspace
+      - model_artifacts:/model
+      - ../services/trainer:/promote_target
+    healthcheck:
+      <<: *common-healthcheck
     logging:
       <<: *common-logging

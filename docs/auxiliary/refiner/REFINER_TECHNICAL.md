@@ -16,14 +16,15 @@ The refiner service improves the training dataset by analyzing
 `misclassified.csv` (validation rows the model predicted incorrectly
 during the holdout test) and producing proposals for relabeling and
 augmentation. It runs **offline** and **on demand**, after the trainer
-service.
+service. Invocation and promotion: see
+[TRAIN_AND_REFINE_GUI_PAGES_TECH.md](docs/auxiliary/architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md).
 
 ## 2. Two-Model Architecture
 
 | Role | Model | Runtime | Purpose |
 | ---- | ----- | ------- | ------- |
 | Router | TF-IDF + LogisticRegression | ai-router, every request | Classify route |
-| Data assistant | Qwen2.5 7B-Instruct (Ollama) | refiner, offline only | Improve dataset |
+| Data assistant | phi3:mini (Ollama) | refiner, offline only | Improve dataset |
 
 The LLM **never participates in request routing**. It only improves the
 dataset during the refinement pipeline.
@@ -92,10 +93,12 @@ The refiner writes a candidate; promotion is conditional on metrics.
 
 ### 5.1 Model Choice
 
-- **Model**: Qwen2.5 7B-Instruct
+- **Model**: phi3:mini
 - **Runtime**: Ollama (containerized)
-- **Rationale**: Strong structured output, instruction adherence, JSON
-  quality, moderate memory footprint (~4-7 GB).
+- **Rationale**: Fast CPU inference, small memory footprint (~2-3 GB),
+  adequate structured output and instruction adherence for dataset
+  refinement tasks. Switched from Qwen2.5 7B-Instruct to reduce
+  CPU-only inference time from minutes to seconds per call.
 
 ### 5.2 Prompt Design
 
@@ -152,10 +155,10 @@ services:
     command: >
       "ollama serve &
        sleep 5 &&
-       ollama pull qwen2.5:7b-instruct &&
+       ollama pull phi3:mini &&
        wait"
     healthcheck:
-      test: ["CMD", "sh", "-c", "ollama list | grep -q qwen2.5:7b-instruct"]
+      test: ["CMD", "sh", "-c", "ollama list | grep -q phi3:mini"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -183,7 +186,7 @@ runs reuse the cached model in the persistent volume.
         condition: service_healthy
     environment:
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_MODEL: qwen2.5:7b-instruct
+      OLLAMA_MODEL: phi3:mini
     volumes:
       - model_artifacts:/data
 ```
@@ -243,7 +246,10 @@ CMD ["python", "app.py"]
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `OLLAMA_HOST` | `http://ollama:11434` | Ollama API base URL |
-| `OLLAMA_MODEL` | `qwen2.5:7b-instruct` | Model tag |
+| `OLLAMA_MODEL` | `phi3:mini` | Model tag |
+| `AUGMENT_MIN_PER_LABEL` | `5` | Minimum synthetic examples to generate per weak label |
+| `AUGMENT_MAX_ATTEMPTS` | `2` | Max LLM calls per label during augmentation |
+| `AUGMENT_SKIP_THRESHOLD` | `150` | Labels with >= this many training rows skip augmentation |
 
 ## 8. Trigger Flow
 

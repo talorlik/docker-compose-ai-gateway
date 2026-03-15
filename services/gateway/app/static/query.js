@@ -7,57 +7,16 @@
   const resultSection = document.getElementById("result-section");
   const errorSection = document.getElementById("error-section");
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const text = input.value.trim();
-    if (!text) return;
+  function escapeHtml(s) {
+    if (typeof s !== "string") return "";
+    const div = document.createElement("div");
+    div.textContent = s;
+    return div.innerHTML;
+  }
 
-    submitBtn.disabled = true;
-    resultSection.classList.add("hidden");
-    errorSection.classList.add("hidden");
-
-    const requestId = crypto.randomUUID();
-    const body = {
-      request_id: requestId,
-      text: text,
-      trace: [
-        {
-          service: "web",
-          event: "submit",
-          ts: new Date().toISOString(),
-        },
-      ],
-    };
-
-    try {
-      const resp = await fetch("/api/request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data = await resp.json();
-      renderResult(data, resp.status);
-    } catch (err) {
-      showError(err.message || "Network error");
-    } finally {
-      submitBtn.disabled = false;
-    }
-  });
-
-  function renderResult(data, status) {
-    resultSection.classList.remove("hidden");
-
-    const isUnknown = status === 404 || data.route === "unknown";
-    const isServiceError = status === 502 || status === 503;
-
-    renderRouteCard(data, isUnknown);
-    renderHopDiagram(data.trace || []);
-    renderTraceTimeline(data.trace || []);
-    renderTimings(data.timings_ms);
-    renderBackendResponse(data.backend_response, isUnknown);
-    renderUnknownMessage(data, isUnknown);
-    renderServiceError(data, isServiceError);
+  function showError(msg) {
+    errorSection.classList.remove("hidden");
+    document.getElementById("error-text").textContent = msg;
   }
 
   function renderRouteCard(data, isUnknown) {
@@ -191,15 +150,56 @@
       data.message || "Service temporarily unavailable.";
   }
 
-  function showError(msg) {
-    errorSection.classList.remove("hidden");
-    document.getElementById("error-text").textContent = msg;
+  function renderResult(data, status) {
+    resultSection.classList.remove("hidden");
+
+    const isUnknown = status === 404 || data.route === "unknown";
+    const isServiceError = status === 502 || status === 503;
+
+    renderRouteCard(data, isUnknown);
+    renderHopDiagram(data.trace || []);
+    renderTraceTimeline(data.trace || []);
+    renderTimings(data.timings_ms);
+    renderBackendResponse(data.backend_response, isUnknown);
+    renderUnknownMessage(data, isUnknown);
+    renderServiceError(data, isServiceError);
   }
 
-  function escapeHtml(s) {
-    if (typeof s !== "string") return "";
-    const div = document.createElement("div");
-    div.textContent = s;
-    return div.innerHTML;
-  }
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+
+    submitBtn.disabled = true;
+    resultSection.classList.add("hidden");
+    errorSection.classList.add("hidden");
+
+    const requestId = crypto.randomUUID();
+    const body = {
+      request_id: requestId,
+      text: text,
+      trace: [
+        {
+          service: "web",
+          event: "submit",
+          ts: new Date().toISOString(),
+        },
+      ],
+    };
+
+    try {
+      const resp = await fetch("/api/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await resp.json();
+      renderResult(data, resp.status);
+    } catch (err) {
+      showError(err.message || "Network error");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
 })();

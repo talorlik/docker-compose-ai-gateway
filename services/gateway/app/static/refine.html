@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Refine - AI Router Gateway</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <link rel="stylesheet" href="/static/refine.css">
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>AI Router Gateway</h1>
+      <p class="subtitle">Run refinement and optionally promote the candidate</p>
+      <nav class="main-nav" aria-label="Main">
+        <a href="/" id="nav-query" class="nav-link">Query</a>
+        <span class="nav-sep">|</span>
+        <a href="/train" id="nav-train" class="nav-link">Train</a>
+        <span class="nav-sep">|</span>
+        <a href="/refine" id="nav-refine" class="nav-link current">Refine</a>
+      </nav>
+    </header>
+
+    <section id="refine-section" class="refine-section">
+      <h2>Refine</h2>
+      <p class="section-desc">Run refinement and optionally promote the candidate.</p>
+      <div class="refine-actions">
+        <button type="button" id="refine-run-btn" class="action-btn">Run refinement</button>
+        <button type="button" id="refine-last-btn" class="action-btn action-btn-secondary">Load last run</button>
+      </div>
+      <div id="refine-progress" class="progress-wrap hidden" role="status" aria-live="polite">
+        <div class="progress-bar progress-bar-indeterminate"></div>
+        <span class="progress-label">Running...</span>
+      </div>
+      <div id="refine-message" class="message-area hidden"></div>
+      <div id="refine-report" class="placeholder-box refine-report hidden">
+        <h3>Report</h3>
+        <div id="refine-report-content" class="data-table-wrap"></div>
+      </div>
+      <div id="refine-comparison" class="placeholder-box hidden">
+        <h3>Before / After</h3>
+        <div id="refine-comparison-content"></div>
+      </div>
+      <div id="refine-tables" class="placeholder-box hidden">
+        <h3>Proposed relabels and examples</h3>
+        <div id="refine-tables-content" class="data-table-wrap"></div>
+      </div>
+      <div id="refine-promote-actions" class="refine-actions hidden">
+        <button type="button" id="refine-promote-btn" class="action-btn action-btn-promote">Promote</button>
+      </div>
+    </section>
+  </main>
+  <script src="/static/refine.js"></script>
+</body>
+</html>

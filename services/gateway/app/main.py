@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -41,6 +41,9 @@ ROUTE_MAP = {
 T_ROUTE = float(os.getenv("T_ROUTE", "0.55"))
 T_MARGIN = float(os.getenv("T_MARGIN", "0.10"))
 TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "30"))
+TRAINING_API_URL = os.getenv("TRAINING_API_URL", "http://training-api:8000")
+PROMOTE_TIMEOUT = 300  # 5 min for POST /api/refine/promote (TECH §5.2)
+SSE_TIMEOUT = 3600  # 1h for events stream; close when API closes (Batch 8)
 
 
 class JsonFormatter(logging.Formatter):
@@ -182,8 +185,20 @@ app.mount(
 
 @app.get("/")
 async def root():
-    """Serve the web UI (FR-058, FR-078)."""
+    """Serve the Query page (FR-058, FR-078)."""
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/train")
+async def train_page():
+    """Serve the Train page."""
+    return FileResponse(STATIC_DIR / "train.html")
+
+
+@app.get("/refine")
+async def refine_page():
+    """Serve the Refine page."""
+    return FileResponse(STATIC_DIR / "refine.html")
 
 
 @app.get("/health")
@@ -200,6 +215,139 @@ async def routes():
             RouteInfo(label=k, backend_url=v) for k, v in ROUTE_MAP.items()
         ]
     )
+
+
+def _training_api_proxy_error(err: Exception) -> JSONResponse:
+    """Return 503 when training-api is unreachable (Batch 7)."""
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Training API unavailable",
+            "error": str(err),
+        },
+    )
+
+
+@app.post("/api/train")
+async def proxy_post_train():
+    """Proxy POST /train to training-api (Batch 7)."""
+    http = app.state.http
+    try:
+        r = await http.post(f"{TRAINING_API_URL.rstrip('/')}/train")
+        return JSONResponse(status_code=r.status_code, content=r.json())
+    except (httpx.ConnectError, httpx.TimeoutException) as err:
+        return _training_api_proxy_error(err)
+
+
+@app.get("/api/train/status/{job_id}")
+async def proxy_get_train_status(job_id: str):
+    """Proxy GET /train/status/{job_id} to training-api (Batch 7)."""
+    http = app.state.http
+    try:
+        r = await http.get(f"{TRAINING_API_URL.rstrip('/')}/train/status/{job_id}")
+        return JSONResponse(status_code=r.status_code, content=r.json())
+    except (httpx.ConnectError, httpx.TimeoutException) as err:
+        return _training_api_proxy_error(err)
+
+
+@app.get("/api/train/last")
+async def proxy_get_train_last():
+    """Proxy GET /train/last to training-api (Batch 7)."""
+    http = app.state.http
+    try:
+        r = await http.get(f"{TRAINING_API_URL.rstrip('/')}/train/last")
+        return JSONResponse(status_code=r.status_code, content=r.json())
+    except (httpx.ConnectError, httpx.TimeoutException) as err:
+        return _training_api_proxy_error(err)
+
+
+async def _stream_training_api_events(url: str):
+    """Stream response body from training-api (chunk-by-chunk). Batch 8."""
+    timeout = httpx.Timeout(SSE_TIMEOUT)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream("GET", url) as upstream:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+
+
+@app.get("/api/train/events/{job_id}")
+async def proxy_get_train_events(job_id: str):
+    """Stream GET /train/events/{job_id} from training-api (Batch 8)."""
+    url = f"{TRAINING_API_URL.rstrip('/')}/train/events/{job_id}"
+    return StreamingResponse(
+        _stream_training_api_events(url),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/refine")
+async def proxy_post_refine():
+    """Proxy POST /refine to training-api (Batch 7)."""
+    http = app.state.http
+    try:
+        r = await http.post(f"{TRAINING_API_URL.rstrip('/')}/refine")
+        return JSONResponse(status_code=r.status_code, content=r.json())
+    except (httpx.ConnectError, httpx.TimeoutException) as err:
+        return _training_api_proxy_error(err)
+
+
+@app.get("/api/refine/status/{job_id}")
+async def proxy_get_refine_status(job_id: str):
+    """Proxy GET /refine/status/{job_id} to training-api (Batch 7)."""
+    http = app.state.http
+    try:
+        r = await http.get(
+            f"{TRAINING_API_URL.rstrip('/')}/refine/status/{job_id}"
+        )
+        return JSONResponse(status_code=r.status_code, content=r.json())
+    except (httpx.ConnectError, httpx.TimeoutException) as err:
+        return _training_api_proxy_error(err)
+
+
+@app.get("/api/refine/last")
+async def proxy_get_refine_last():
+    """Proxy GET /refine/last to training-api (Batch 7)."""
+    http = app.state.http
+    try:
+        r = await http.get(f"{TRAINING_API_URL.rstrip('/')}/refine/last")
+        return JSONResponse(status_code=r.status_code, content=r.json())
+    except (httpx.ConnectError, httpx.TimeoutException) as err:
+        return _training_api_proxy_error(err)
+
+
+@app.get("/api/refine/events/{job_id}")
+async def proxy_get_refine_events(job_id: str):
+    """Stream GET /refine/events/{job_id} from training-api (Batch 8)."""
+    url = f"{TRAINING_API_URL.rstrip('/')}/refine/events/{job_id}"
+    return StreamingResponse(
+        _stream_training_api_events(url),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/refine/promote")
+async def proxy_post_refine_promote():
+    """Proxy POST /refine/promote with long timeout (Batch 7)."""
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(PROMOTE_TIMEOUT)
+        ) as client:
+            r = await client.post(
+                f"{TRAINING_API_URL.rstrip('/')}/refine/promote"
+            )
+            return JSONResponse(status_code=r.status_code, content=r.json())
+    except (httpx.ConnectError, httpx.TimeoutException) as err:
+        return _training_api_proxy_error(err)
 
 
 @app.post("/api/request")

@@ -28,7 +28,7 @@ dataset refinement pipeline using a local LLM. See
 | ID | Requirement | Priority |
 | --- | --- | --- |
 | REF-FR-001 | The router model (TF-IDF + LogisticRegression) SHALL remain in ai-router for live routing. | Must |
-| REF-FR-002 | A local LLM (Qwen2.5 7B-Instruct) SHALL run in a containerized Ollama for refinement only. | Must |
+| REF-FR-002 | A local LLM (phi3:mini) SHALL run in a containerized Ollama for refinement only. | Must |
 | REF-FR-003 | The LLM SHALL NOT participate in request routing. | Must |
 | REF-FR-004 | The LLM SHALL be used only for: relabel suggestions, augmentation examples, ambiguity analysis. | Must |
 
@@ -69,7 +69,7 @@ dataset refinement pipeline using a local LLM. See
 | REF-FR-018 | Ollama SHALL use the official `ollama/ollama:latest` image. | Must |
 | REF-FR-019 | Ollama SHALL expose port 11434 for the API. | Must |
 | REF-FR-020 | Ollama SHALL use a persistent volume for model storage (`ollama_data`). | Must |
-| REF-FR-021 | The model `qwen2.5:7b-instruct` SHALL be pulled automatically when Compose brings up the ollama service; no manual pull command SHALL be required. | Must |
+| REF-FR-021 | The model `phi3:mini` SHALL be pulled automatically when Compose brings up the ollama service; no manual pull command SHALL be required. | Must |
 | REF-FR-022 | Ollama SHALL have a health check (e.g. `ollama list`). | Must |
 
 ## 7. Refiner Service Requirements
@@ -80,7 +80,7 @@ dataset refinement pipeline using a local LLM. See
 | REF-FR-024 | The refiner SHALL use the `refine` Compose profile; it SHALL NOT start with default `docker compose up`. | Must |
 | REF-FR-025 | The refiner SHALL depend on Ollama with `condition: service_healthy`. | Must |
 | REF-FR-026 | The refiner SHALL connect to Ollama via `OLLAMA_HOST` (default `http://ollama:11434`). | Must |
-| REF-FR-027 | The refiner SHALL use `OLLAMA_MODEL` (default `qwen2.5:7b-instruct`). | Must |
+| REF-FR-027 | The refiner SHALL use `OLLAMA_MODEL` (default `phi3:mini`). | Must |
 | REF-FR-028 | The refiner SHALL mount the shared model volume for read/write of proposal files. | Must |
 
 ## 8. Trigger and Workflow Requirements

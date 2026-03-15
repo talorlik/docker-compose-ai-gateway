@@ -153,3 +153,12 @@ Refiner service tasks (Ollama, relabel pipeline, augmentation, promote) are
 documented in [REFINER_TASKS.md](docs/auxiliary/refiner/REFINER_TASKS.md). Run
 trainer first, then
 refiner, then promote.
+
+## Train and Refine GUI Pages
+
+Tasks for the Train and Refine UI (training-api, Redis, SSE, gateway proxy,
+hash routing) are in
+[TRAIN_AND_REFINE_GUI_PAGES_TASKS.md](docs/auxiliary/planning/TRAIN_AND_REFINE_GUI_PAGES_TASKS.md).
+Plan and technical spec:
+[TRAIN_AND_REFINE_GUI_PAGES_PLAN.md](docs/auxiliary/planning/TRAIN_AND_REFINE_GUI_PAGES_PLAN.md),
+[TRAIN_AND_REFINE_GUI_PAGES_TECH.md](docs/auxiliary/architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md).

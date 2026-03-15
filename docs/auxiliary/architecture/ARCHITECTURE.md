@@ -7,16 +7,17 @@ technical stakeholders.
 ## Table of Contents
 
 1. [Overview](#1-overview)
-2. [Components](#2-components)
-3. [Request Flow](#3-request-flow)
-4. [Routing Model](#4-routing-model)
-5. [Trace Contract](#5-trace-contract)
-6. [Deployment](#6-deployment)
-7. [Data Flow](#7-data-flow)
-8. [Integration Points](#8-integration-points)
-9. [Cross-Cutting Concerns](#9-cross-cutting-concerns)
-10. [Error Handling](#10-error-handling)
-11. [Related Documentation](#11-related-documentation)
+2. [System Diagram](#2-system-diagram)
+3. [Components](#3-components)
+4. [Request Flow](#4-request-flow)
+5. [Routing Model](#5-routing-model)
+6. [Trace Contract](#6-trace-contract)
+7. [Deployment](#7-deployment)
+8. [Data Flow](#8-data-flow)
+9. [Integration Points](#9-integration-points)
+10. [Cross-Cutting Concerns](#10-cross-cutting-concerns)
+11. [Error Handling](#11-error-handling)
+12. [Related Documentation](#12-related-documentation)
 
 ## 1. Overview
 
@@ -24,9 +25,12 @@ technical stakeholders.
 
 The system is a locally runnable, multi-container microservice mesh where
 an AI classifier selects the backend service for each incoming request.
-The browser UI displays the exact path taken (application-level tracing)
-per action. It demonstrates Docker Compose advanced features (profiles,
-health checks, anchors) and AI-driven intent routing without external
+The browser UI provides Query (main API and trace), Train (run training,
+view metrics and misclassified table), and Refine (run refinement, view
+report and comparison, promote candidate). Train and Refine job completion
+is event-driven via Redis Pub/Sub and Server-Sent Events (no polling). The
+stack demonstrates Docker Compose advanced features (profiles, health
+checks, anchors) and AI-driven intent routing without external
 observability dependencies.
 
 ### 1.2 Architecture Principles
@@ -38,7 +42,10 @@ observability dependencies.
 - **Profile-based deployment:** Runtime stack (gateway, ai-router, backends)
   runs by default; trainer and refiner run on demand via profiles.
 - **Separation of concerns:** Inference (ai-router) and training (trainer)
-  are separate; model artifact flows via shared volume.
+  are separate; model artifact flows via shared volume. Training-api is the
+  single implementation for train, refine, and promote (HTTP and CLI).
+- **Event-driven train/refine:** Redis job state and Pub/Sub; SSE streams
+  one completion event to the UI (no polling or long timeouts).
 - **Deterministic, reproducible:** Fixed random_state, CPU-only, cross-platform.
 
 ### 1.3 Technology Stack
@@ -47,7 +54,8 @@ observability dependencies.
 | --- | --- |
 | Runtime | Python 3.12, FastAPI, Uvicorn/Gunicorn |
 | AI/ML | scikit-learn (TF-IDF, Logistic Regression), joblib |
-| Refinement | Ollama (Qwen2.5 7B-Instruct) for dataset improvement |
+| Refinement | Ollama (phi3:mini) for dataset improvement |
+| Job state / events | Redis (job keys with TTL, Pub/Sub for SSE) |
 | Containerization | Docker, Docker Compose |
 | Platform | Linux, Mac, Windows |
 
@@ -56,21 +64,99 @@ observability dependencies.
 ```text
 compose/          # docker-compose.yaml (base), docker-compose.dev.yaml
 services/         # gateway, ai_router, search_service, image_service,
-                  # ops_service, trainer, refiner
+                  # ops_service, trainer, refiner, training-api
 scripts/          # demo.sh, load_test.sh, promote.sh
 docs/auxiliary/   # architecture, demo, planning, refiner, requirements
 ```
 
-## 2. Components
+## 2. System Diagram
 
-### 2.1 Gateway
+The following diagram shows the full project: query path (gateway, ai-router,
+backends), train/refine path (gateway, training-api, Redis, trainer/refiner),
+and shared model artifacts.
 
-- **Role:** Entry point for all requests. Serves static UI and main API.
+```mermaid
+flowchart TB
+  subgraph browser [Browser]
+    UI[Query / Train / Refine]
+  end
+
+  subgraph gateway_svc [Gateway]
+    GW[Gateway]
+  end
+
+  subgraph runtime [Runtime Stack]
+    AR[AI Router]
+    SS[search_service]
+    IS[image_service]
+    OS[ops_service]
+  end
+
+  subgraph training_stack [Training Stack - profile ops/refine]
+    subgraph training_api_svc [Training API]
+      API[Training API]
+    end
+    Redis[Redis]
+    Trainer[trainer]
+    Refiner[refiner]
+  end
+
+  subgraph ollama_svc [Ollama - profile refine]
+    Ollama[Ollama]
+  end
+
+  subgraph volumes [Volumes]
+    MA[model_artifacts]
+    OD[ollama_data]
+  end
+
+  UI -->|GET /, POST /api/request| GW
+  UI -->|POST /api/train, POST /api/refine, SSE events, POST promote| GW
+
+  GW -->|POST /classify| AR
+  GW -->|POST /handle| SS
+  GW -->|POST /handle| IS
+  GW -->|POST /handle| OS
+  GW -->|proxy train/refine/promote, proxy SSE| API
+
+  API -->|job state, PUBLISH/SUBSCRIBE| Redis
+  API -->|docker compose run| Trainer
+  API -->|docker compose run| Refiner
+  Trainer -->|read/write| MA
+  Refiner -->|read/write| MA
+  API -->|read artifacts| MA
+  AR -->|load model| MA
+  Refiner -->|LLM prompts| Ollama
+  Ollama -->|persist| OD
+```
+
+**Flows:**
+
+- **Query:** User -> Gateway -> AI Router (classify) -> Gateway -> Backend
+  (handle) -> Gateway -> User. Model loaded from model_artifacts.
+- **Train:** User -> Gateway (POST /api/train) -> Training API -> job_id; UI
+  opens SSE to gateway -> training-api subscribes to Redis; background task
+  runs trainer via Compose, writes to model_artifacts, then PUBLISHes;
+  client gets one SSE event and renders metrics/misclassified.
+- **Refine:** Same pattern with refiner (and Ollama for LLM). UI gets report,
+  comparison, tables; Promote button calls POST /api/refine/promote.
+
+## 3. Components
+
+### 3.1 Gateway
+
+- **Role:** Entry point for all requests. Serves static UI and main API;
+  proxies to ai-router, backends, and training-api.
 - **Endpoints:**
-  - `GET /` - Static web UI
+  - `GET /` - Static web UI (Query, Train, Refine via hash routing)
   - `POST /api/request` - Main API entrypoint
   - `GET /routes` - List of route labels and backend URLs
   - `GET /health` - Health check
+  - `POST /api/train`, `GET /api/train/events/{job_id}`,
+    `GET /api/train/status/{job_id}`, `GET /api/train/last` - Proxy to training-api
+  - `POST /api/refine`, `GET /api/refine/events/{job_id}`,
+    `GET /api/refine/status/{job_id}`, `GET /api/refine/last` - Proxy to training-api
+  - `POST /api/refine/promote` - Proxy to training-api (longer timeout, e.g. 5 min)
 - **Responsibilities:**
   - Generate or accept `request_id` (UUID)
   - Call ai-router `POST /classify` with request text
@@ -79,8 +165,10 @@ docs/auxiliary/   # architecture, demo, planning, refiner, requirements
   - Proxy to selected backend `POST /handle` otherwise
   - Aggregate trace and timings from all hops
   - Return 502 on backend failure, 503 on ai-router failure
+  - Stream SSE from training-api for GET .../events/{job_id} so the UI
+    receives job completion via EventSource without polling
 
-### 2.2 AI Router
+### 3.2 AI Router
 
 - **Role:** Intent classification. Runs lightweight text classifier.
 - **Endpoints:**
@@ -92,7 +180,7 @@ docs/auxiliary/   # architecture, demo, planning, refiner, requirements
   - Return route, confidence, probabilities, explanation (top tokens)
   - Append trace entry for classification
 
-### 2.3 Backend Services
+### 3.3 Backend Services
 
 | Service | Role | Simulates |
 | --- | --- | --- |
@@ -107,32 +195,37 @@ Each backend:
 - Returns `payload` and `trace_append`
 - Includes `instance` (hostname) in payload for scaling visibility
 
-### 2.4 Trainer
+### 3.4 Trainer
 
-- **Role:** One-shot training container. Not part of the runtime stack.
-- **Usage:** `docker compose --profile train run --rm trainer`
+- **Role:** One-shot training container. Invoked by training-api (or directly
+  via profile). Not part of the default runtime stack.
+- **Usage:** `docker compose --profile train run --rm trainer`, or via
+  training-api when the UI starts a train job.
 - **Responsibilities:**
   - Load `train.csv` from host (mounted at runtime)
   - Train model, write `model.joblib` to shared volume
   - Write `metrics.json` and `misclassified.csv`
   - Exit
 
-### 2.5 Refiner
+### 3.5 Refiner
 
-- **Role:** Offline dataset improvement via local LLM. Not part of the runtime stack.
-- **Usage:** `docker compose --profile refine run --rm refiner` (after trainer)
+- **Role:** Offline dataset improvement via local LLM. Invoked by training-api
+  (or directly via profile). Not part of the default runtime stack.
+- **Usage:** `docker compose --profile refine run --rm refiner` (after trainer),
+  or via training-api when the UI starts a refine job.
 - **Responsibilities:**
   - Read `misclassified.csv` and `train.csv` from shared volume
-  - Call Ollama (Qwen2.5 7B-Instruct) for relabel suggestions and augmentation
+  - Call Ollama (phi3:mini) for relabel suggestions and augmentation
   - Write `proposed_relabels.csv`, `proposed_examples.csv`, `train_candidate.csv`
-  - Exit; promotion to `train.csv` via `scripts/promote.sh` only when metrics improve
+  - Exit; promotion to `train.csv` via training-api (POST /refine/promote) or
+    `scripts/promote.sh` when metrics improve
 
-### 2.6 Ollama
+### 3.6 Ollama
 
 - **Role:** Local LLM server for the refiner. Profile `refine` only.
 - **Usage:** Started automatically when `docker compose --profile refine up` runs.
 - **Responsibilities:**
-  - Serve Qwen2.5 7B-Instruct model (pulled on first run)
+  - Serve phi3:mini model (pulled on first run)
   - Expose API at `http://ollama:11434` for refiner to call
   - Persist model data in `ollama_data` volume
 
@@ -140,7 +233,41 @@ See [REFINER_PLAN.md](../refiner/REFINER_PLAN.md),
 [REFINER_TECHNICAL.md](../refiner/REFINER_TECHNICAL.md),
 [REFINER_FLOW.md](../refiner/REFINER_FLOW.md).
 
-## 3. Request Flow
+### 3.7 Training API
+
+- **Role:** Canonical Python implementation of train, refine, and promote.
+  Exposes HTTP API for the UI and CLI entrypoint for scripts (e.g.
+  `docker compose run training-api promote`). Same code for both triggers.
+- **Location:** `services/training-api/`. Profile `ops` or `refine`.
+- **Endpoints:** POST /train, GET /train/events/{job_id}, GET /train/status/{job_id},
+  GET /train/last; POST /refine, GET /refine/events/{job_id}, GET /refine/status/{job_id},
+  GET /refine/last; POST /refine/promote.
+- **Responsibilities:**
+  - Create jobs (job_id), store state in Redis (TTL e.g. 24h), spawn background
+    task that runs trainer/refiner via Docker Compose
+  - On completion: read artifacts from model_artifacts volume, SET Redis key,
+    PUBLISH to Redis channel; GET .../events/{job_id} SUBSCRIBEs to channel and
+    streams one SSE event to client then closes
+  - POST /refine/promote: synchronous run_promote(), write promoted dataset to
+    mounted train.csv; return promoted flag and acc_before/acc_after
+- **Event-driven:** No polling; job completion notified via Redis Pub/Sub and
+  SSE. See [TRAIN_AND_REFINE_GUI_PAGES_TECH.md](TRAIN_AND_REFINE_GUI_PAGES_TECH.md).
+
+### 3.8 Redis
+
+- **Role:** Dedicated service for training-api job state and Pub/Sub. Enables
+  event-driven completion (SSE) without polling or long timeouts.
+- **Usage:** Runs when training-api profile is active. Training-api connects via
+  REDIS_URL or REDIS_HOST/REDIS_PORT (e.g. `redis:6379`).
+- **Responsibilities:**
+  - Job keys `job:train:{job_id}` and `job:refine:{job_id}` with JSON state
+    (status, result, error, created_at) and TTL
+  - Pub/Sub channels `job:train:events:{job_id}` and `job:refine:events:{job_id}`;
+    training-api PUBLISHes on job completion; SSE endpoint SUBSCRIBEs and streams
+    first message to client
+- **Network:** Internal only; not exposed publicly.
+
+## 4. Request Flow
 
 ```ascii
 User (browser/curl)
@@ -165,7 +292,35 @@ Gateway (POST /api/request)
 Gateway aggregates trace, returns response
 ```
 
-## 4. Routing Model
+**Train / Refine flow (event-driven):**
+
+```ascii
+User (Train or Refine page)
+    |
+    v
+Gateway (POST /api/train or POST /api/refine) -> Training API
+    |
+    v
+Training API: create job_id, store "pending" in Redis, spawn background task,
+              return { job_id } immediately
+    |
+    +---> Background: docker compose run trainer|refiner -> read artifacts
+    |              -> SET Redis key, PUBLISH to job:train:events:{id} or
+    |                 job:refine:events:{id}
+    |
+User opens EventSource to Gateway (GET /api/train/events/{job_id} or refine)
+    |
+    v
+Gateway streams SSE from Training API <- Training API SUBSCRIBEs to Redis channel
+    |
+    v
+First message (completed|failed) -> client closes EventSource, renders result
+```
+
+Promote is synchronous: POST /api/refine/promote -> gateway -> training-api
+run_promote() -> response with promoted, acc_before, acc_after.
+
+## 5. Routing Model
 
 **Labels:** `search`, `image`, `ops`, `unknown`
 
@@ -176,7 +331,7 @@ Gateway aggregates trace, returns response
 - If route is `unknown` or below threshold or margin: return 404, no proxy
 - Otherwise: proxy to backend
 
-## 5. Trace Contract
+## 6. Trace Contract
 
 Each trace entry: `service`, `event`, `ts` (ISO 8601), optional `meta`.
 
@@ -193,42 +348,51 @@ Each trace entry: `service`, `event`, `ts` (ISO 8601), optional `meta`.
 
 **Backend failure (502):** Backend hop attempted, failed. Trace shows error in meta.
 
-## 6. Deployment
+## 7. Deployment
 
-### 6.1 Compose Configuration
+### 7.1 Compose Configuration
 
 - **Base:** `compose/docker-compose.yaml` - anchors (x-common-env,
-  x-common-healthcheck, x-common-logging), health checks, profiles
-- **Dev overlay:** `compose/docker-compose.dev.yaml` - hot reload, bind mounts
+  x-common-healthcheck, x-common-logging), health checks, profiles. Services
+  run from built images.
+- **Dev overlay:** `compose/docker-compose.dev.yaml` - overlay merged with the
+  base via a second `-f`; adds bind mounts and `uvicorn --reload` for the five
+  app services so source changes apply without rebuild. Launch with both files:
 
-### 6.2 Profiles
+  ```bash
+  docker compose -f compose/docker-compose.yaml -f compose/docker-compose.dev.yaml up --build
+  ```
+
+### 7.2 Profiles
 
 | Profile | Services | When to Use |
 | --- | --- | --- |
 | (default) | gateway, ai_router, search_service, image_service, ops_service | Normal runtime |
 | train | trainer | Retrain model: `--profile train run --rm trainer` |
 | refine | ollama, refiner | Dataset refinement: `--profile refine up` or `run --rm refiner` |
+| ops / refine | redis, training-api | Train/Refine UI: proxy and SSE; gateway shows "Training API not available" when inactive |
 
-### 6.3 Volumes
+### 7.3 Volumes
 
 | Volume | Purpose |
 | --- | --- |
-| model_artifacts | Shared between trainer (write), ai_router (read), refiner (read/write) |
-| ollama_data | Ollama model storage (Qwen2.5 7B-Instruct) |
+| model_artifacts | Shared between trainer (write), ai_router (read), refiner (read/write), training-api (read) |
+| ollama_data | Ollama model storage (phi3:mini) |
 
-### 6.4 Scaling
+### 7.4 Scaling
 
 - **Horizontal scaling:** `docker compose up -d --scale search_service=3`
 - **Load distribution:** DNS round-robin via Compose service discovery
 - **Visibility:** Backend payload includes `instance` (hostname) for scaling demos
 
-### 6.5 Health and Dependencies
+### 7.5 Health and Dependencies
 
 - Gateway depends on ai_router and all backends with `condition: service_healthy`
+- Training-api depends on Redis (e.g. `depends_on: redis`) when profile is active
 - Refiner depends on Ollama with `condition: service_healthy`
 - Health checks hit `GET /health` on each service (10s interval, 5s timeout)
 
-## 7. Data Flow
+## 8. Data Flow
 
 ```ascii
 train.csv (trainer)
@@ -247,43 +411,58 @@ gateway (applies policy, proxies or 404)
 ```
 
 **Refined dataset flow:** trainer -> misclassified.csv -> refiner (Ollama) ->
-train_candidate.csv -> promote.sh (retrain, compare metrics, promote if improved).
-See [REFINER_FLOW.md](../refiner/REFINER_FLOW.md).
+train_candidate.csv -> training-api (POST /refine/promote or scripts/promote.sh):
+retrain, compare metrics, promote if improved. See [REFINER_FLOW.md](../refiner/REFINER_FLOW.md).
 
-## 8. Integration Points
+**Train/Refine UI flow:** UI POSTs to gateway -> training-api creates job, returns
+job_id; UI opens EventSource to gateway -> training-api SSE endpoint SUBSCRIBEs
+to Redis; background task runs trainer/refiner, then PUBLISHes; client receives
+one SSE event and renders result. No polling. See
+[TRAIN_AND_REFINE_GUI_PAGES_TECH.md](TRAIN_AND_REFINE_GUI_PAGES_TECH.md).
 
-### 8.1 Client Interfaces
+## 9. Integration Points
+
+### 9.1 Client Interfaces
 
 | Interface | Endpoint | Consumers |
 | --- | --- | --- |
-| Web UI | `GET /` | Browser (static HTML/JS/CSS) |
+| Web UI | `GET /` | Browser (Query, Train, Refine via hash routing) |
 | Main API | `POST /api/request` | Browser, curl, scripts |
+| Train API | `POST /api/train`, `GET /api/train/events/{job_id}`, etc. | Browser (Train page) |
+| Refine API | `POST /api/refine`, `GET /api/refine/events/{job_id}`, `POST /api/refine/promote`, etc. | Browser (Refine page) |
 | Routes discovery | `GET /routes` | Clients needing backend URLs |
 | Health | `GET /health` | Compose health checks, load balancers |
 
-### 8.2 Internal Service Communication
+### 9.2 Internal Service Communication
 
 - Gateway -> ai_router: `POST /classify` (synchronous)
 - Gateway -> backends: `POST /handle` (synchronous, one per request)
+- Gateway -> training-api: proxy POST/GET (including streaming SSE for
+  .../events/{job_id}); TRAINING_API_URL env
+- Training-api -> Redis: job keys (SET/GET), Pub/Sub (PUBLISH/SUBSCRIBE)
+- Training-api -> trainer/refiner: Docker Compose run (one-shot)
 - Refiner -> Ollama: HTTP API (relabel and augmentation prompts)
 - All internal calls use service names (e.g., `http://ai_router:8000`)
 
-## 9. Cross-Cutting Concerns
+## 10. Cross-Cutting Concerns
 
-### 9.1 Observability
+### 10.1 Observability
 
 - **Tracing:** Application-level only; `request_id` propagated end-to-end
 - **Logging:** JSON-file driver, 10MB max, 3 files; `request_id` in logs
 - **Health:** `/health` on all services; Compose uses for startup ordering
 
-### 9.2 Security
+### 10.2 Security
 
 - **No external dependencies:** Runs fully offline; no cloud or third-party APIs
 - **Non-root runtime:** Services run as non-root user in containers (per NFR-016)
 - **Minimal surface:** Single exposed port (8000); refiner and trainer are
-  on-demand, not long-running
+  on-demand, not long-running; training-api and Redis are internal only (no
+  public ports)
+- **Internal only:** Redis and training-api are not exposed publicly; gateway
+  proxies to training-api on internal network
 
-### 9.3 Non-Functional Attributes
+### 10.3 Non-Functional Attributes
 
 | Attribute | Approach |
 | --- | --- |
@@ -292,7 +471,7 @@ See [REFINER_FLOW.md](../refiner/REFINER_FLOW.md).
 | Deterministic | Fixed random_state in training; reproducible builds |
 | Request timeout | Configurable via REQUEST_TIMEOUT env (default 30s) |
 
-## 10. Error Handling
+## 11. Error Handling
 
 | Scenario | HTTP | Trace | Cause |
 | --- | --- | --- | --- |
@@ -302,11 +481,12 @@ See [REFINER_FLOW.md](../refiner/REFINER_FLOW.md).
 | AI router down | 503 | None | Infrastructure |
 | Success | 200 | Full path | Normal |
 
-## 11. Related Documentation
+## 12. Related Documentation
 
 | Document | Description |
 | --- | --- |
 | [TECHNICAL.md](TECHNICAL.md) | Training pipeline, routing policy, model details |
+| [TRAIN_AND_REFINE_GUI_PAGES_TECH.md](TRAIN_AND_REFINE_GUI_PAGES_TECH.md) | Train/Refine UI, training-api, Redis, SSE, data contracts |
 | [PROJECT_PLAN.md](../planning/PROJECT_PLAN.md) | Project overview and technical requirements |
 | [PRD.md](../requirements/PRD.md) | Product requirements and functional specs |
 | [DEMO.md](../demo/DEMO.md) | Build, run, scaling, and failure demos |

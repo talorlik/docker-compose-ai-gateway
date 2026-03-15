@@ -432,3 +432,11 @@ The following are out of scope for the current release but may be considered lat
 - More sophisticated load balancing in gateway
 - External training data sources (e.g., Stack Overflow, intent datasets)
   as optional augmentation
+- On-demand Ollama model selection: UI dropdown to choose or pull LLM models
+  for the refiner (via Ollama `/api/tags` and `/api/pull`), with download
+  progress feedback
+- Reduce `AUGMENT_MIN_PER_LABEL` further (e.g., from 5 to 3) to cut
+  augmentation Ollama calls and speed up refinement
+- Two-phase refinement: split into a fast "relabel-only" pass (< 2 min)
+  that returns immediately, and a separate "augment" pass that runs
+  asynchronously and streams results as they arrive

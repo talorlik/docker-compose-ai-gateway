@@ -59,9 +59,11 @@ row lookup without searching by text.
 
 **Response:** A separate refiner pipeline sits beside the trainer and
 ai-router. It processes misclassified rows, produces proposals, applies
-filters, and writes `train_candidate.csv`. Run `scripts/promote.sh` to
-retrain and **promote to `train.csv` only if metrics improve**. No manual
-merge; only improving data is written back.
+filters, and writes `train_candidate.csv`. Run refine and promote via
+**training-api** (UI or CLI) or `scripts/promote.sh`. **Promote to
+`train.csv` only if metrics improve**. See
+[TRAIN_AND_REFINE_GUI_PAGES_TECH.md](docs/auxiliary/architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md)
+for UI/CLI and event-driven flow.
 
 ### Six-stage pipeline
 
@@ -76,7 +78,7 @@ merge; only improving data is written back.
 ### Local LLM role
 
 Keep TF-IDF + LogisticRegression for ai-router. Use a local instruct
-model (Qwen2.5 7B or Llama 3.1 8B) only in the refiner service. The LLM:
+model (phi3:mini via Ollama) only in the refiner service. The LLM:
 
 - Proposes corrected labels
 - Generates synthetic examples
@@ -103,7 +105,7 @@ network, validates JSON output, filters duplicates, and writes
 | Model | Type | Where | When | Purpose |
 | ----- | ---- | ----- | ---- | ------- |
 | **Router** | TF-IDF + LogReg | ai-router | Every request | Decide route |
-| **Data assistant** | Qwen2.5 7B (Ollama) | refiner | Offline only | Improve dataset |
+| **Data assistant** | phi3:mini (Ollama) | refiner | Offline only | Improve dataset |
 
 The router is fast and deterministic. The LLM generates examples,
 rewrites text, and explains mistakes. Do not use the LLM for routing:
@@ -111,25 +113,27 @@ it is slower, unpredictable, and inconsistent.
 
 **Mental model:** Router = traffic cop. LLM = teacher training the cop.
 
-## 4. Model Choice: Qwen2.5 7B vs Llama 3.1 8B
+## 4. Model Choice: phi3:mini
 
-**Query:** Which model is better for local dataset refinement?
+**Query:** Which model is used for local dataset refinement?
 
-**Response:** Qwen2.5 7B is the better fit for this project.
+**Response:** phi3:mini is the current model for this project.
 
-| Factor | Qwen2.5 7B | Llama 3.1 8B |
-| ------ | ---------- | ------------ |
-| Structured output | Excellent | Good |
-| Memory (4-bit) | ~4-5 GB | ~5-6 GB |
-| Instruction adherence | Strong | Slightly less strict |
-| Synthetic data generation | Excellent | Good |
+| Factor | phi3:mini |
+| ------ | --------- |
+| Structured output | Good |
+| Memory | ~2-3 GB |
+| CPU inference speed | Fast (seconds per call) |
+| Instruction adherence | Adequate for refinement |
 
-For dataset refinement (relabel suggestions, JSON output, augmentation),
-Qwen2.5 7B produces cleaner output and is slightly lighter.
+Switched from Qwen2.5 7B-Instruct to phi3:mini to reduce CPU-only
+inference time from minutes to seconds per call. On-demand model
+selection is a planned future enhancement (see PRD.md and
+PROJECT_PLAN.md).
 
 ## 5. Containerized Setup
 
-**Query:** How do I install Ollama with Qwen2.5 7B and integrate it into
+**Query:** How do I install Ollama with phi3:mini and integrate it into
 Docker Compose?
 
 **Response:** Run Ollama as a container in the same Compose stack. Do not
@@ -144,7 +148,7 @@ train.csv + misclassified.csv
      refiner
         |
         v
-     ollama (Qwen2.5 7B-Instruct)
+     ollama (phi3:mini)
         |
         v
 proposed_relabels.csv + proposed_examples.csv (audit)
@@ -192,8 +196,8 @@ reproducibility across macOS, Linux, and Windows + WSL2.
 1. `docker compose --profile train run --rm trainer`
 2. `docker compose --profile refine run --rm refiner`
 
-Ollama pulls `qwen2.5:7b-instruct` automatically when the refine profile
-starts; no manual pull is required. First run may take several minutes
+Ollama pulls `phi3:mini` automatically when the refine profile
+starts; no manual pull is required. First run may take a minute
 to download the model; later runs reuse the cached model.
 
 The model container is not part of request routing; it is only used

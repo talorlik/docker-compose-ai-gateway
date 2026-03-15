@@ -233,8 +233,8 @@ cmd_test() {
 
 cmd_train() {
   cd "$COMPOSE_DIR"
-  echo "Training new model..."
-  docker compose -f "$COMPOSE_FILE" --profile train run --rm trainer
+  echo "Training new model (via training-api)..."
+  docker compose -f "$COMPOSE_FILE" --profile refine run --rm training-api train
   echo ""
   echo "Reloading ai_router..."
   docker compose -f "$COMPOSE_FILE" restart ai_router
@@ -252,12 +252,12 @@ cmd_refine() {
   done
 
   cd "$COMPOSE_DIR"
-  echo "Running refiner (requires Ollama)..."
+  echo "Running refinement (via training-api; requires Ollama)..."
   if [[ -n "$limit" ]]; then
     docker compose -f "$COMPOSE_FILE" --profile refine run --rm \
-      -e "REFINER_LIMIT=$limit" refiner
+      -e "REFINER_LIMIT=$limit" training-api refine
   else
-    docker compose -f "$COMPOSE_FILE" --profile refine run --rm refiner
+    docker compose -f "$COMPOSE_FILE" --profile refine run --rm training-api refine
   fi
   echo ""
   echo "Run demo.sh promote to retrain and promote if metrics improve"

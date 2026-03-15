@@ -13,8 +13,8 @@ advanced features and AI-driven routing.
 
 The project must be demonstrable via:
 
-- **Browser UI** (primary): Single-page application showing routing decisions and
-request traces
+- **Browser UI** (primary): Single-page application (Query, Train, Refine) showing
+  routing decisions, request traces, and train/refine job results via SSE
 - **Terminal commands**: curl-based API testing with trace visibility
 - **Scaling scenarios**: Demonstrate load distribution across scaled services
 - **Failure scenarios**: Show fallback behavior when backends fail
@@ -37,10 +37,10 @@ health checks - see Section 9
 ### 2.1 Services
 
 1. **gateway** (FastAPI)
-   - Serves static UI at `/` (see Section 7.3)
+   - Serves static UI at `/` (Query | Train | Refine; Section 7.3)
    - Main API entrypoint: `POST /api/request`
-   - Calls `ai-router` to classify requests
-   - Proxies to selected backend service
+   - Calls `ai-router` to classify requests; proxies to backends and
+     training-api. See [ARCHITECTURE.md](docs/auxiliary/architecture/ARCHITECTURE.md).
    - Aggregates and returns full request trace
    - Implements confidence thresholding and fallback logic (see Section 2.3)
 
@@ -63,21 +63,25 @@ health checks - see Section 9
    - Simulates DevOps/infrastructure troubleshooting responses
 
 6. **trainer** (one-shot container, no FastAPI)
-   - Runs on demand via `docker compose --profile train run --rm trainer`
-   - `train.py` baked into image; `train.csv` mounted from host at runtime
-   - Writes `model.joblib` to a shared volume, then exits
-   - Separate from ai-router so inference stays small and stable
-   - See Section 8.3 for Dockerfile, Section 9.3 for Compose
-     configuration
+   - Invoked by training-api or directly via profile. See Section 8.3,
+     Section 9.3, and [ARCHITECTURE.md](docs/auxiliary/architecture/ARCHITECTURE.md).
 
 7. **refiner** (one-shot container, no FastAPI)
-   - Runs on demand via `docker compose --profile refine run --rm refiner`
-   - Analyzes `misclassified.csv` via local LLM (Ollama, Qwen2.5 7B-Instruct)
-   - Produces `train_candidate.csv`; promotion to `train.csv` only when metrics
-     improve (via `scripts/promote.sh`)
-   - See [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md),
+   - Invoked by training-api or directly via profile; promotion via
+     training-api or `scripts/promote.sh`. See
+     [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md),
      [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md),
-     [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md)
+     [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md).
+
+8. **training-api** (FastAPI)
+   - Train, refine, promote (HTTP + CLI). See
+     [TRAIN_AND_REFINE_GUI_PAGES_TECH.md](docs/auxiliary/architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md),
+     [ARCHITECTURE.md](docs/auxiliary/architecture/ARCHITECTURE.md).
+
+9. **Redis**
+   - Job state and Pub/Sub for training-api. See
+     [TRAIN_AND_REFINE_GUI_PAGES_TECH.md](docs/auxiliary/architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md),
+     [ARCHITECTURE.md](docs/auxiliary/architecture/ARCHITECTURE.md).
 
 ### 2.2 Request Flow
 
@@ -711,11 +715,11 @@ using the production Dockerfile pattern.
 - Network configuration
 - Anchors for common configurations
 
-**`compose/docker-compose.dev.yaml`** (dev profile):
+**`compose/docker-compose.dev.yaml`** (dev overlay):
 
-- Bind mounts for hot reload
-- Exposed debug ports
-- Override command for `--reload`
+- Bind mounts app source so changes apply without rebuild
+- Override command to `uvicorn ... --reload` for hot reload
+- Use with base: `-f compose/docker-compose.yaml -f compose/docker-compose.dev.yaml`
 
 ### 9.2 Required Advanced Features
 
@@ -1084,6 +1088,14 @@ The refiner service automates dataset improvement using a local LLM. See
 - Metrics endpoint for gateway (request rate, latency per route)
 - Additional backend services
 - More sophisticated load balancing in gateway
+- On-demand Ollama model selection: UI dropdown to list, choose, or pull
+  LLM models for the refiner (via Ollama `/api/tags` and `/api/pull`),
+  with download progress feedback in the UI
+- Reduce `AUGMENT_MIN_PER_LABEL` further (e.g., from 5 to 3) to cut
+  augmentation Ollama calls and speed up refinement
+- Two-phase refinement: split into a fast "relabel-only" pass (< 2 min)
+  that returns immediately, and a separate "augment" pass that runs
+  asynchronously and streams results as they arrive
 
 ## Appendix: Quick Reference
 
