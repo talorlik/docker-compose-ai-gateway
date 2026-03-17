@@ -12,8 +12,20 @@ set -e
 
 COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${COMPOSE_DIR}/compose/docker-compose.yaml"
+CONFIG_ENV="${CONFIG_ENV:-dev}"
+
+ensure_env() {
+  # Generate env/.env.<env> from config/PROJECT_CONFIG.yaml if it does not exist.
+  local env_file="${COMPOSE_DIR}/env/.env.${CONFIG_ENV}"
+  if [[ ! -f "$env_file" ]]; then
+    echo "Generating $env_file from config/PROJECT_CONFIG.yaml (CONFIG_ENV=${CONFIG_ENV})..."
+    python "${COMPOSE_DIR}/scripts/generate_env.py" "${CONFIG_ENV}"
+  fi
+}
 
 cd "$COMPOSE_DIR"
+
+ensure_env
 
 docker compose -f "$COMPOSE_FILE" --profile refine run --rm training-api promote
 

@@ -8,6 +8,16 @@ COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${COMPOSE_DIR}/compose/docker-compose.yaml"
 COMPOSE_DEV="${COMPOSE_DIR}/compose/docker-compose.dev.yaml"
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8000}"
+CONFIG_ENV="${CONFIG_ENV:-dev}"
+
+ensure_env() {
+  # Generate env/.env.<env> from config/PROJECT_CONFIG.yaml if it does not exist.
+  local env_file="${COMPOSE_DIR}/env/.env.${CONFIG_ENV}"
+  if [[ ! -f "$env_file" ]]; then
+    echo "Generating $env_file from config/PROJECT_CONFIG.yaml (CONFIG_ENV=${CONFIG_ENV})..."
+    python "${COMPOSE_DIR}/scripts/generate_env.py" "${CONFIG_ENV}"
+  fi
+}
 
 usage() {
   cat <<'EOF'
@@ -93,6 +103,8 @@ cmd_run() {
       *) shift ;;
     esac
   done
+
+  ensure_env
 
   cd "$COMPOSE_DIR"
   local compose_args=(-f "$COMPOSE_FILE")

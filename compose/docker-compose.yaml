@@ -7,7 +7,7 @@ volumes:
   ollama_data_2:
   ollama_data_3:
 
-env_file_defaults: &env-file-defaults
+x-env-file-defaults: &env-file-defaults
   env_file:
     - ../env/.env.dev
 
