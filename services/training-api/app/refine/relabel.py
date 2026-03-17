@@ -16,6 +16,8 @@ from app.redis_client import (
     stream_ack,
     stream_add,
     stream_group_create,
+    stream_auto_claim_pending,
+    stream_get_delivery_count,
     stream_read_group,
 )
 from app.refine.config import RefineConfig
@@ -188,6 +190,8 @@ def run_relabel_workers(
     done_lock = threading.Lock()
     done_batches: set[str] = set()
 
+    max_retries = int(os.environ.get("REFINER_RELABEL_MAX_RETRIES", "3"))
+
     def _worker(worker_idx: int) -> None:
         consumer = f"{run_id[:8]}-{worker_idx}"
         while True:
@@ -199,10 +203,21 @@ def run_relabel_workers(
                 block_ms=1000,
             )
             if not items:
-                with done_lock:
-                    if len(done_batches) >= expected_batches:
-                        return
-                continue
+                # Nothing new; attempt to claim any idle pending entries so that
+                # timeouts or crashed workers do not leave the job stuck.
+                pending = stream_auto_claim_pending(
+                    cfg.relabel_tasks_stream,
+                    group,
+                    consumer,
+                    min_idle_ms=cfg.ollama_timeout_seconds * 1000,
+                    count=1,
+                )
+                if not pending:
+                    with done_lock:
+                        if len(done_batches) >= expected_batches:
+                            return
+                    continue
+                items = pending
 
             entry_id, fields = items[0]
             try:
@@ -240,11 +255,22 @@ def run_relabel_workers(
                     "detail": f"Relabel batch failed: {e}",
                     "error": str(e),
                     "entry_id": entry_id,
+                    "batch_id": fields.get("batch_id"),
                 }
                 if progress:
                     progress(err_evt)
                 publish_event(cfg.events_channel(run_id), err_evt)
-                # do not ack - leave pending for retry/claim later
+                # Decide whether to leave pending for retry or mark permanently failed.
+                deliveries = stream_get_delivery_count(
+                    cfg.relabel_tasks_stream,
+                    group,
+                    entry_id,
+                )
+                if deliveries is not None and deliveries >= max_retries:
+                    # Give up on this batch so the overall job can complete.
+                    stream_ack(cfg.relabel_tasks_stream, group, entry_id)
+                    with done_lock:
+                        done_batches.add(str(fields.get("batch_id") or entry_id.replace("-", "_")))
 
     threads = []
     for i in range(cfg.relabel_max_parallel_batches):
@@ -315,6 +341,12 @@ def run_relabel_phase(
         json.dump(metrics_before, f, ensure_ascii=False, indent=2)
 
     train_df = _read_train_csv(promote_target_path)
+    # Create the consumer group BEFORE enqueueing so workers don't miss entries.
+    # stream_group_create handles BUSYGROUP silently, so the redundant call
+    # inside run_relabel_workers is harmless.
+    stream_group_create(
+        cfg.relabel_tasks_stream, f"{cfg.relabel_consumer_group}:{run_id}"
+    )
     total_batches = enqueue_relabel_batches(cfg, run_id=run_id, misclassified_rows=misclassified)
 
     start_evt = {

@@ -182,6 +182,60 @@ def stream_ack(stream: str, group: str, entry_id: str) -> None:
     conn.xack(stream, group, entry_id)
 
 
+def stream_auto_claim_pending(
+    stream: str,
+    group: str,
+    consumer: str,
+    *,
+    min_idle_ms: int = 300_000,
+    count: int = 1,
+) -> list[tuple[str, dict[str, str]]]:
+    """Claim idle pending entries for a consumer using XAUTOCLAIM.
+
+    Returns a list of (entry_id, fields) items, similar to stream_read_group.
+    """
+    conn = get_connection()
+    # xautoclaim returns (next_start_id, [ [entry_id, {field: value}], ... ])
+    _next_id, entries = conn.xautoclaim(  # noqa: F841
+        name=stream,
+        groupname=group,
+        consumername=consumer,
+        min_idle_time=min_idle_ms,
+        start_id="0-0",
+        count=count,
+    )
+    items: list[tuple[str, dict[str, str]]] = []
+    for entry_id, fields in entries:
+        items.append((entry_id, fields))
+    return items
+
+
+def stream_get_delivery_count(stream: str, group: str, entry_id: str) -> int | None:
+    """Return the delivery count for a specific pending entry, if available.
+
+    Uses XPENDING RANGE to query a single entry; returns None if the entry is
+    not pending or on error.
+    """
+    conn = get_connection()
+    try:
+        pending = conn.xpending_range(
+            name=stream,
+            groupname=group,
+            min=entry_id,
+            max=entry_id,
+            count=1,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if not pending:
+        return None
+    _id, _consumer, _idle, deliveries = pending[0]
+    try:
+        return int(deliveries)
+    except (TypeError, ValueError):
+        return None
+
+
 def _verify() -> None:
     """Smoke test: set/get job state and pub/sub. Run with python -m app.redis_client."""
     import threading

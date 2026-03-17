@@ -16,6 +16,8 @@ from app.redis_client import (
     stream_ack,
     stream_add,
     stream_group_create,
+    stream_auto_claim_pending,
+    stream_get_delivery_count,
     stream_read_group,
 )
 from app.refine.config import RefineConfig
@@ -141,6 +143,8 @@ def run_augment_workers(
     done_lock = threading.Lock()
     done_labels: set[str] = set()
 
+    max_retries = int(os.environ.get("REFINER_AUGMENT_MAX_RETRIES", "3"))
+
     def _worker(worker_idx: int) -> None:
         consumer = f"{run_id[:8]}-{worker_idx}"
         while True:
@@ -152,10 +156,21 @@ def run_augment_workers(
                 block_ms=1000,
             )
             if not items:
-                with done_lock:
-                    if len(done_labels) >= expected_labels:
-                        return
-                continue
+                # Nothing new; attempt to claim any idle pending entries so that
+                # timeouts or crashed workers do not leave the job stuck.
+                pending = stream_auto_claim_pending(
+                    cfg.augment_tasks_stream,
+                    group,
+                    consumer,
+                    min_idle_ms=cfg.ollama_timeout_seconds * 1000,
+                    count=1,
+                )
+                if not pending:
+                    with done_lock:
+                        if len(done_labels) >= expected_labels:
+                            return
+                    continue
+                items = pending
 
             entry_id, fields = items[0]
             try:
@@ -192,10 +207,23 @@ def run_augment_workers(
                     "detail": f"Augment task failed: {e}",
                     "error": str(e),
                     "entry_id": entry_id,
+                    "label": fields.get("label"),
                 }
                 if progress:
                     progress(err_evt)
                 publish_event(cfg.events_channel(run_id), err_evt)
+                deliveries = stream_get_delivery_count(
+                    cfg.augment_tasks_stream,
+                    group,
+                    entry_id,
+                )
+                if deliveries is not None and deliveries >= max_retries:
+                    # Give up on this label so the overall job can complete.
+                    stream_ack(cfg.augment_tasks_stream, group, entry_id)
+                    with done_lock:
+                        label = str(fields.get("label") or "").strip()
+                        if label:
+                            done_labels.add(label)
 
     threads = []
     max_workers = min(cfg.augment_max_parallel_labels, max(1, expected_labels))
@@ -262,6 +290,10 @@ def run_augment_phase(
         json.dump(metrics_before, f, ensure_ascii=False, indent=2)
 
     labels = _labels_to_augment(metrics_before)
+    # Create the consumer group BEFORE enqueueing so workers don't miss entries.
+    stream_group_create(
+        cfg.augment_tasks_stream, f"{cfg.augment_consumer_group}:{run_id}"
+    )
     total = enqueue_augment_tasks(cfg, run_id=run_id, labels=labels)
 
     start_evt = {
