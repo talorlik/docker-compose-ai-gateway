@@ -28,9 +28,11 @@ Commands:
   logs [SERVICE...]  Follow logs. Default: gateway ai_router search_service
   test [SERVICE]     Run unit tests. SERVICE: all (default), gateway, ai_router
   train              Train new model and reload ai_router
-  refine [--limit N]  Run refiner (produces train_candidate.csv). --limit N limits
-                     misclassified rows (faster runs).
-  promote            Retrain with candidate, promote to train.csv if metrics improve
+  refine [--limit N]  Run two-phase refine (relabel + augment) via training-api.
+                     Produces train_candidate.csv and metrics comparison. --limit N
+                     limits misclassified rows used in relabel (faster runs).
+  promote            Retrain with candidate and promote to train.csv if metrics
+                     improve (same behavior as Refine UI "Promote")
   help, --help, -h    Show this help
 
 Options:
@@ -252,7 +254,7 @@ cmd_refine() {
   done
 
   cd "$COMPOSE_DIR"
-  echo "Running refinement (via training-api; requires Ollama)..."
+  echo "Running two-phase refinement (relabel + augment) via training-api; requires Ollama..."
   if [[ -n "$limit" ]]; then
     docker compose -f "$COMPOSE_FILE" --profile refine run --rm \
       -e "REFINER_LIMIT=$limit" training-api refine

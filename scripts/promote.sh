@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Promote train_candidate.csv to train.csv only if retraining improves metrics.
-# Uses the canonical training-api promote flow (same as the UI Promote button).
+# Uses the canonical training-api promote flow (same behavior as the Refine UI
+# "Promote" button).
 #
-# Prerequisites: Run refinement first (e.g. via UI or: docker compose run training-api refine).
+# Prerequisites: Run the refine pipeline first (via UI relabel + augment, or
+# via CLI: ./scripts/demo.sh refine) so that train_candidate.csv and metrics
+# artifacts exist for the most recent run.
 # After promotion, restart ai_router to use the new model.
 
 set -e

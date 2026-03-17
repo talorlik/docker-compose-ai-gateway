@@ -23,8 +23,8 @@ project root unless noted.
 | Logs | `./scripts/demo.sh logs` |
 | Unit tests | `./scripts/demo.sh test` |
 | Train model | `./scripts/demo.sh train` |
-| Refine dataset | `./scripts/demo.sh refine` (option: `--limit 5`) |
-| Promote candidate | `./scripts/promote.sh` |
+| Refine dataset (relabel + augment) | `./scripts/demo.sh refine` (option: `--limit 5`) |
+| Promote candidate | `./scripts/demo.sh promote` (CLI) or `./scripts/promote.sh` |
 
 ## Part I: Command-Line and Script Runbook
 
@@ -276,31 +276,43 @@ docker compose -f compose/docker-compose.yaml restart ai_router
 
 ### 11. Refine and Promote (CLI)
 
-Refiner uses a local LLM (Ollama). Run trainer first to produce
-`misclassified.csv`. See
+Refinement is a two-phase flow (relabel + augment) powered by a local LLM
+(Ollama) and orchestrated by `training-api`. Run trainer first to
+produce `misclassified.csv`. See
 [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md),
 [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md),
 [TRAIN_AND_REFINE_GUI_PAGES_TECH.md](docs/auxiliary/architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md).
 
-**Full workflow (train, refine, promote):**
+**Full workflow (train, refine = relabel + augment, then promote):**
 
 ```bash
 ./scripts/demo.sh train
 ./scripts/demo.sh refine
-./scripts/promote.sh
+./scripts/demo.sh promote
 ```
 
-**Refine with row limit (faster):**
+`demo.sh refine` runs the same two-phase pipeline as the Refine page:
+first relabeling misclassified rows, then per-label augmentation, and
+preparing a candidate dataset and metrics comparison under the
+`model_artifacts` volume.
+
+**Refine with row limit (faster; limits misclassified rows used in relabel):**
 
 ```bash
 ./scripts/demo.sh refine --limit 5
 ```
 
-**Promote only (after refine):**
+**Promote only (after a successful refine run):**
 
 ```bash
-./scripts/promote.sh
+./scripts/demo.sh promote
 ```
+
+CLI promotion uses the canonical `training-api promote` flow (same as
+the Refine UI **Promote** button): it retrains on `train_candidate.csv`,
+compares `metrics_before.json` vs `metrics_candidate.json`, and only
+copies the candidate to `train.csv` (and promotes `model.joblib`) when
+metrics improve.
 
 If promotion succeeded, restart ai_router:
 
@@ -308,9 +320,10 @@ If promotion succeeded, restart ai_router:
 docker compose -f compose/docker-compose.yaml restart ai_router
 ```
 
-**Environment variables (refine):** `REFINER_LIMIT` (max rows, 0 = no limit),
-`REFINER_BANNED_PATTERNS` (comma-separated substrings to reject),
-`OLLAMA_HOST`, `OLLAMA_MODEL`. See refiner docs.
+**Environment variables (refine):** `REFINER_LIMIT` (max rows, 0 = no
+limit), `REFINER_BANNED_PATTERNS` (comma-separated substrings to
+reject), `OLLAMA_HOST`, `OLLAMA_MODEL`. See refiner docs for additional
+phase-specific settings (batch size, examples per label, parallelism).
 
 ### 12. Demo Script Reference
 
@@ -411,23 +424,34 @@ If the Training API is not available, start the stack with
 
 ### Refine Tab
 
-Use this tab to run refinement from the UI, view the report and
-before/after comparison, and promote the candidate dataset when metrics
+Use this tab to run the two refinement phases, inspect their artifacts
+and metrics, and promote the final candidate dataset when metrics
 improve.
 
 1. Ensure the stack is running with the **refine** profile and **Ollama**
    is running (required for the refiner). Start with the refine profile;
    Ollama is typically part of that profile.
 2. Open the **Refine** tab.
-3. Start a refinement run (e.g. click the button to start refinement).
-4. Wait for completion (event-driven via SSE). View:
-   - **Report** – Rows processed, relabels proposed, examples proposed.
-   - **Comparison** – Metrics before and after (candidate vs current).
-   - **Tables** – Proposed relabels, proposed examples, train candidate.
-5. If the comparison shows improvement, click **Promote** to run
-   promotion. Promotion retrains with the candidate and updates
-   `train.csv` only if metrics improve. The request may take a few
-   minutes; the UI uses a longer timeout for the promote call.
+3. To run **Relabeling**, click the relabel action. It calls
+   `/api/refine/relabel`, streams progress via SSE, and, when
+   completed, shows:
+   - **Report** – Rows processed, relabels proposed, rows skipped.
+   - **Comparison** – Metrics before and after for the relabel-only
+     candidate dataset.
+   - **Tables** – Proposed relabels and the relabel candidate dataset.
+4. To run **Augmentation**, click the augment action. It calls
+   `/api/refine/augment`, streams progress via SSE, and, when
+   completed, shows:
+   - **Report** – Examples proposed per label and any skipped labels.
+   - **Comparison** – Metrics before and after for the augmented
+     candidate dataset.
+   - **Tables** – Proposed examples and the final train candidate
+     dataset.
+5. If the comparison for the final candidate shows improvement, click
+   **Promote**. Promotion calls `/api/refine/promote`, retrains with the
+   candidate, and updates `train.csv` and model artifacts only if
+   metrics improve. The request may take a few minutes; the UI uses a
+   longer timeout for the promote call.
 
 If the Training API or Ollama is not available, start the stack with the
 refine profile and ensure Ollama is up (e.g. first run may pull the
