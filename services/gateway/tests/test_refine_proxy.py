@@ -15,6 +15,7 @@ for k in list(sys.modules.keys()):
         sys.modules.pop(k, None)
 
 from fastapi.testclient import TestClient  # pylint: disable=import-error  # noqa: E402
+from app import main as gateway_main  # pylint: disable=import-error  # noqa: E402
 from app.main import app  # pylint: disable=import-error  # noqa: E402
 
 
@@ -59,3 +60,63 @@ def test_proxy_post_refine_augment(client):
         assert resp.status_code == 200
         assert resp.json()["job_id"] == "jid2"
         assert resp.json()["run_id"] == "rid2"
+
+
+def test_proxy_relabel_returns_503_on_connect_error(client):
+    import httpx
+
+    with patch.object(app.state, "http", AsyncMock(), create=True) as mock_http:
+        mock_http.post = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        resp = client.post("/api/refine/relabel")
+        assert resp.status_code == 503
+        assert "Training API unavailable" in resp.json()["detail"]
+
+
+def test_proxy_augment_returns_503_on_timeout(client):
+    import httpx
+
+    with patch.object(app.state, "http", AsyncMock(), create=True) as mock_http:
+        mock_http.post = AsyncMock(
+            side_effect=httpx.TimeoutException("read timeout")
+        )
+        resp = client.post("/api/refine/augment")
+        assert resp.status_code == 503
+        assert "Training API unavailable" in resp.json()["detail"]
+
+
+def test_proxy_relabel_forwards_upstream_status_code(client):
+    async def mock_post(url, json=None, headers=None):  # noqa: ANN001
+        _ = (json, headers)
+        return MockResponse({"detail": "busy"}, status_code=429)
+
+    with patch.object(app.state, "http", AsyncMock(), create=True) as mock_http:
+        mock_http.post = AsyncMock(side_effect=mock_post)
+        resp = client.post("/api/refine/relabel")
+        assert resp.status_code == 429
+        assert resp.json()["detail"] == "busy"
+
+
+def test_proxy_relabel_events_endpoint_exists(client):
+    """GET /api/refine/relabel/events/{job_id} should be routable (we only test
+    that the route exists; the upstream stream is not mocked here)."""
+    with patch.object(
+        gateway_main,
+        "_stream_training_api_events",
+        return_value=iter([b'data: {"status":"completed"}\n\n']),
+    ):
+        resp = client.get("/api/refine/relabel/events/test-job")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+
+
+def test_proxy_augment_events_endpoint_exists(client):
+    with patch.object(
+        gateway_main,
+        "_stream_training_api_events",
+        return_value=iter([b'data: {"status":"completed"}\n\n']),
+    ):
+        resp = client.get("/api/refine/augment/events/test-job")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")

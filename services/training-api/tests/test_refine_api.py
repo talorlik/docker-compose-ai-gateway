@@ -80,3 +80,72 @@ def test_augment_events_failed_immediate(client):
         body = resp.text
         assert '"status": "failed"' in body
         assert "boom" in body
+
+
+def test_post_relabel_sets_pending_state(client):
+    """POST /refine/relabel should call set_job_state with pending status."""
+    with (
+        patch("app.main.set_job_state") as mock_set,
+        patch("app.main.threading.Thread", side_effect=lambda *a, **k: type(
+            "T", (), {"daemon": True, "start": lambda self: None}
+        )()),
+    ):
+        resp = client.post("/refine/relabel")
+        assert resp.status_code == 200
+        call_args = mock_set.call_args
+        assert call_args is not None
+        key, payload = call_args[0]
+        assert key.startswith("job:refine:relabel:")
+        assert payload["status"] == "pending"
+        assert "run_id" in payload
+
+
+def test_post_augment_sets_pending_state(client):
+    """POST /refine/augment should call set_job_state with pending status."""
+    with (
+        patch("app.main.set_job_state") as mock_set,
+        patch("app.main.threading.Thread", side_effect=lambda *a, **k: type(
+            "T", (), {"daemon": True, "start": lambda self: None}
+        )()),
+    ):
+        resp = client.post("/refine/augment")
+        assert resp.status_code == 200
+        call_args = mock_set.call_args
+        assert call_args is not None
+        key, payload = call_args[0]
+        assert key.startswith("job:refine:augment:")
+        assert payload["status"] == "pending"
+
+
+def test_relabel_events_error_detail_included(client):
+    """When job failed, error_detail should be in the SSE payload."""
+    with patch("app.main.get_job_state") as mock_get:
+        mock_get.return_value = {
+            "status": "failed",
+            "error": "short",
+            "error_detail": "long detailed error message",
+        }
+        resp = client.get("/refine/relabel/events/j1")
+        assert resp.status_code == 200
+        assert "long detailed error message" in resp.text
+
+
+def test_relabel_events_pending_does_not_yield_immediately(client):
+    """If job is still pending, SSE should not return a completed/failed payload."""
+    with (
+        patch("app.main.get_job_state") as mock_get,
+        patch("app.main.subscribe_to_job_channel_until_done", return_value=iter([])),
+    ):
+        mock_get.return_value = {"status": "pending"}
+        resp = client.get("/refine/relabel/events/j2")
+        assert resp.status_code == 200
+        assert '"status": "completed"' not in resp.text
+        assert '"status": "failed"' not in resp.text
+
+
+def test_post_relabel_job_id_and_run_id_are_uuids(client):
+    resp = client.post("/refine/relabel")
+    data = resp.json()
+    import uuid
+    uuid.UUID(data["job_id"])
+    uuid.UUID(data["run_id"])
