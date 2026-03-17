@@ -14,9 +14,9 @@ REFINER_TECHNICAL, REFINER_PRD, and METRICS_JSON specifications.
 `metrics.json` answers: **"Did the dataset changes improve the classifier?"**
 `misclassified.csv` answers: **"What mistakes did the model make?"**
 
-## 2. High-Level Flow
+## 2. High-Level Flow (Updated: Two-Phase Refine)
 
-```text
+```ascii
                     train.csv (host)
                            |
                            v
@@ -32,35 +32,43 @@ REFINER_TECHNICAL, REFINER_PRD, and METRICS_JSON specifications.
          |                 +--------+--------+
          |                          |
          v                          v
-   ai_router (runtime)         +----------+
-         |                     | refiner  |
-         |                     +----------+
-         |                          |
-         |                          v
-         |                     ollama (LLM)
-         |                          |
-         |                          v
-         |              proposed_relabels.csv
-         |              proposed_examples.csv
-         |              train_candidate.csv
-         |              metrics_before.json
-         |                          |
-         |                          v
-         |                   promote.sh
-         |                          |
-         |              +-----------+-----------+
-         |              |                       |
-         |         metrics improved        metrics worse
-         |              |                       |
-         |              v                       v
-         |     train.csv updated          discard candidate
-         |     model.joblib promoted      train.csv unchanged
-         |              |
-         |              v
-         |     restart ai_router
-         |
-         v
-   (live routing uses model.joblib)
+   ai_router (runtime)        training-api (offline jobs)
+                                  |
+                                  +--> relabel phase (Redis Streams tasks)
+                                  |       |
+                                  |       v
+                                  |   ollama pool (multi-instance)
+                                  |       |
+                                  |       v
+                                  |   refine_runs/<run_id>/relabel/
+                                  |     proposed_relabels.csv
+                                  |     train_relabel_candidate.csv
+                                  |     metrics_relabel_candidate.json
+                                  |
+                                  +--> augment phase (Redis Streams tasks)
+                                          |
+                                          v
+                                      ollama pool (multi-instance)
+                                          |
+                                          v
+                                      refine_runs/<run_id>/augment/
+                                        proposed_examples.csv
+                                        train_augment_candidate.csv
+                                        metrics_augment_candidate.json
+                                  |
+                                  v
+                             promote (optional)
+                                  |
+                    +-------------+-------------+
+                    |                           |
+              metrics improved             metrics worse
+                    |                           |
+                    v                           v
+             train.csv updated            discard candidate
+             model.joblib promoted        train.csv unchanged
+                    |
+                    v
+            restart ai_router
 ```
 
 ## 3. Detailed Step-by-Step Flow
@@ -74,38 +82,47 @@ REFINER_TECHNICAL, REFINER_PRD, and METRICS_JSON specifications.
    - `metrics.json` - accuracy, classification_report, confusion_matrix
    - `misclassified.csv` - rows where pred_label != true_label
 
-### Phase 2: Refine
+### Phase 2: Refine (Relabel + Augment)
 
 1. **Input**:
    - `train.csv` (read-only)
    - `misclassified.csv` (from volume)
    - `metrics.json` (from volume)
 
-2. **Action**: `docker compose --profile refine run --rm refiner`
+2. **Action**: Use the UI or call the training-api endpoints:
 
-3. **Refiner sub-steps**:
-   - Ingest train.csv and misclassified.csv
-   - Verify Ollama connectivity
-   - **Relabel**: For each misclassified row, call LLM; propose corrected label
-   - **Augment**: For each label needing improvement (from misclassified +
-     weak recall from metrics + confusion patterns), generate min 5 examples
-     (AUGMENT_MIN_PER_LABEL=5, max 2 LLM attempts per label). Labels with
-     >= 150 existing training rows (AUGMENT_SKIP_THRESHOLD) skip augmentation
-   - Filter: dedupe, min length
-   - Merge relabels and examples into train_candidate.csv
-   - Save metrics_before.json for promote comparison
+   - `POST /refine/relabel` (plus SSE at `GET /refine/relabel/events/{job_id}`)
+   - `POST /refine/augment` (plus SSE at `GET /refine/augment/events/{job_id}`)
+
+3. **Refine sub-steps**:
+   - Ingest inputs (`train.csv`, `misclassified.csv`, `metrics.json`)
+   - Use Redis Streams to enqueue work units:
+     - Relabel: tasks are batches of misclassified rows
+     - Augment: tasks are one label per task
+   - Process tasks in parallel with an Ollama pool (multi-instance)
+   - Write conflict-free per-task outputs under `refine_runs/<run_id>/...`
+   - Merge deterministically into a candidate dataset CSV per phase
+   - Retrain on the candidate and write phase-specific metrics JSON for a
+     before/after comparison
 
 4. **Output** (to `model_artifacts` volume):
-   - `proposed_relabels.csv` (audit)
-   - `proposed_examples.csv` (audit)
-   - `train_candidate.csv` (candidate dataset)
-   - `metrics_before.json` (snapshot for comparison)
+   - `refine_runs/<run_id>/metrics_before.json`
+   - Relabel:
+     - `refine_runs/<run_id>/relabel/proposed_relabels.csv`
+     - `refine_runs/<run_id>/relabel/train_relabel_candidate.csv`
+     - `refine_runs/<run_id>/relabel/metrics_relabel_candidate.json`
+   - Augment:
+     - `refine_runs/<run_id>/augment/proposed_examples.csv`
+     - `refine_runs/<run_id>/augment/train_augment_candidate.csv`
+     - `refine_runs/<run_id>/augment/metrics_augment_candidate.json`
 
 ### Phase 3: Promote
 
-1. **Input**: `train_candidate.csv`, `metrics_before.json`
+1. **Input**: A run_id candidate dataset (augment preferred, else relabel) plus
+   its `metrics_before.json`.
 
-2. **Action**: `./scripts/promote.sh`
+2. **Action**: Use the UI Promote button (sends the most recent `run_id`) or
+   call `POST /refine/promote` with body `{ "run_id": "..." }`.
 
 3. **Promote sub-steps**:
    - Retrain with train_candidate.csv (produces model_candidate.joblib,
@@ -124,8 +141,10 @@ REFINER_TECHNICAL, REFINER_PRD, and METRICS_JSON specifications.
 # 1. Train
 docker compose -f compose/docker-compose.yaml --profile train run --rm trainer
 
-# 2. Refine (requires Ollama; first run pulls phi3:mini)
-docker compose -f compose/docker-compose.yaml --profile refine run --rm refiner
+# 2. Refine (via training-api endpoints; uses multi Ollama instances)
+# Use the UI at /refine or call:
+# - POST /refine/relabel
+# - POST /refine/augment
 
 # 3. Promote only if metrics improve
 ./scripts/promote.sh
@@ -146,7 +165,7 @@ Or via demo.sh:
 
 | Decision | Condition | Action |
 | -------- | --------- | ------ |
-| Labels to augment | Labels in misclassified OR recall < 0.75 OR confusion count >= 10; skip if label has >= 150 training rows | Generate min 5 examples per label (max 2 LLM attempts) |
+| Labels to augment | Weak labels from metrics (low recall) and/or configured selection | Generate `REFINER_AUGMENT_N_PER_LABEL` examples per label |
 | Promote candidate | candidate_accuracy > previous_accuracy | Copy to train.csv, promote model |
 | Discard candidate | candidate_accuracy <= previous_accuracy | Keep train.csv and model.joblib |
 

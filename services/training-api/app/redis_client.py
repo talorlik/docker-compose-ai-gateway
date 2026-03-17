@@ -84,6 +84,16 @@ def publish_job_event(channel: str, payload: dict[str, Any]) -> None:
     conn.publish(channel, json.dumps(payload))
 
 
+def publish_event(channel: str, payload: dict[str, Any]) -> None:
+    """Publish an event payload to an arbitrary channel.
+
+    Used for refinement lifecycle events and infrastructure status broadcasts
+    (e.g. Ollama availability).
+    """
+    conn = get_publish_connection()
+    conn.publish(channel, json.dumps(payload))
+
+
 def subscribe_to_job_channel(channel: str) -> Iterator[str]:
     """Subscribe to channel and yield the first message. Used by SSE endpoints."""
     conn = get_connection()
@@ -120,6 +130,56 @@ def subscribe_to_job_channel_until_done(channel: str) -> Iterator[str]:
                 pass
     finally:
         pubsub.close()
+
+
+def stream_add(stream: str, fields: dict[str, Any]) -> str:
+    """XADD to a Redis Stream and return entry id."""
+    conn = get_publish_connection()
+    payload = {k: json.dumps(v) if isinstance(v, (dict, list)) else str(v) for k, v in fields.items()}
+    return conn.xadd(stream, payload)
+
+
+def stream_group_create(stream: str, group: str) -> None:
+    """Create a consumer group if it does not exist (MKSTREAM)."""
+    conn = get_publish_connection()
+    try:
+        conn.xgroup_create(name=stream, groupname=group, id="$", mkstream=True)
+    except Exception as e:  # noqa: BLE001
+        # BUSYGROUP means it already exists.
+        if "BUSYGROUP" not in str(e):
+            raise
+
+
+def stream_read_group(
+    stream: str,
+    group: str,
+    consumer: str,
+    *,
+    count: int = 1,
+    block_ms: int = 1000,
+) -> list[tuple[str, dict[str, str]]]:
+    """Read entries from a stream as part of a consumer group.
+
+    Returns a list of (entry_id, fields) items.
+    """
+    conn = get_connection()
+    resp = conn.xreadgroup(
+        groupname=group,
+        consumername=consumer,
+        streams={stream: ">"},
+        count=count,
+        block=block_ms,
+    )
+    items: list[tuple[str, dict[str, str]]] = []
+    for _stream_name, entries in resp:
+        for entry_id, fields in entries:
+            items.append((entry_id, fields))
+    return items
+
+
+def stream_ack(stream: str, group: str, entry_id: str) -> None:
+    conn = get_publish_connection()
+    conn.xack(stream, group, entry_id)
 
 
 def _verify() -> None:

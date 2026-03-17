@@ -3,7 +3,9 @@
 
 volumes:
   model_artifacts:
-  ollama_data:
+  ollama_data_1:
+  ollama_data_2:
+  ollama_data_3:
 
 x-common-env: &common-env
   LOG_LEVEL: info
@@ -121,13 +123,56 @@ services:
     logging:
       <<: *common-logging
 
-  ollama:
+  ollama_1:
     image: ollama/ollama:latest
-    container_name: ollama
     ports:
       - "11434:11434"
     volumes:
-      - ollama_data:/root/.ollama
+      - ollama_data_1:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "ollama serve &
+       sleep 5 &&
+       ollama pull phi3:mini &&
+       wait"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ollama list | grep -q phi3:mini"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 600s
+    restart: unless-stopped
+    logging:
+      <<: *common-logging
+
+  ollama_2:
+    image: ollama/ollama:latest
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_data_2:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "ollama serve &
+       sleep 5 &&
+       ollama pull phi3:mini &&
+       wait"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ollama list | grep -q phi3:mini"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 600s
+    restart: unless-stopped
+    logging:
+      <<: *common-logging
+
+  ollama_3:
+    image: ollama/ollama:latest
+    ports:
+      - "11436:11434"
+    volumes:
+      - ollama_data_3:/root/.ollama
     entrypoint: ["/bin/sh", "-c"]
     command: >
       "ollama serve &
@@ -151,11 +196,15 @@ services:
     profiles:
       - refine
     depends_on:
-      ollama:
+      ollama_1:
+        condition: service_healthy
+      ollama_2:
+        condition: service_healthy
+      ollama_3:
         condition: service_healthy
     environment:
       <<: *common-env
-      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_HOST: http://ollama_1:11434
       OLLAMA_MODEL: phi3:mini
     volumes:
       # Shared volume: trainer writes to /model; refiner reads from /data
@@ -177,7 +226,11 @@ services:
     depends_on:
       redis:
         condition: service_started
-      ollama:
+      ollama_1:
+        condition: service_healthy
+      ollama_2:
+        condition: service_healthy
+      ollama_3:
         condition: service_healthy
     environment:
       <<: *common-env
@@ -185,7 +238,8 @@ services:
       COMPOSE_WORKING_DIR: /workspace
       MODEL_ARTIFACTS_PATH: /model
       PROMOTE_TARGET_PATH: /promote_target
-      OLLAMA_HOST: "http://ollama:11434"
+      OLLAMA_HOST: "http://ollama_1:11434"
+      OLLAMA_URLS: "http://ollama_1:11434,http://ollama_2:11434,http://ollama_3:11434"
       OLLAMA_MODEL: "phi3:mini"
       REFINER_LIMIT: "5"
     volumes:

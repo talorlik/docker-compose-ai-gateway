@@ -11,7 +11,7 @@
   <main class="container">
     <header class="header">
       <h1>AI Router Gateway</h1>
-      <p class="subtitle">Run refinement and optionally promote the candidate</p>
+      <p class="subtitle">Run relabeling or augmentation and optionally promote</p>
       <nav class="main-nav" aria-label="Main">
         <a href="/" id="nav-query" class="nav-link">Query</a>
         <span class="nav-sep">|</span>
@@ -23,10 +23,10 @@
 
     <section id="refine-section" class="refine-section">
       <h2>Refine</h2>
-      <p class="section-desc">Run refinement and optionally promote the candidate.</p>
+      <p class="section-desc">Run relabeling or augmentation independently.</p>
       <div class="refine-actions">
-        <button type="button" id="refine-run-btn" class="action-btn">Run refinement</button>
-        <button type="button" id="refine-last-btn" class="action-btn action-btn-secondary">Load last run</button>
+        <button type="button" id="relabel-run-btn" class="action-btn">Run relabeling</button>
+        <button type="button" id="augment-run-btn" class="action-btn action-btn-secondary">Run augmentation</button>
       </div>
       <div id="refine-progress" class="progress-wrap hidden" role="status" aria-live="polite">
         <div class="progress-bar progress-bar-indeterminate"></div>

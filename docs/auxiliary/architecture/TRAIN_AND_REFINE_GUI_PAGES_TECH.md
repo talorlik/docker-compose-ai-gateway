@@ -173,11 +173,11 @@ flowchart LR
 | GET | /train/events/{job_id} | SSE: SUBSCRIBE to job:train:events:{job_id}; stream first message; close |
 | GET | /train/status/{job_id} | Read Redis key; return job_id, status, result, error; 404 if unknown/expired |
 | GET | /train/last | Read last run from volume; same shape as result; 404 if not present |
-| POST | /refine | Create job; background run_refine(); return `{ "job_id" }` |
-| GET | /refine/events/{job_id} | SSE: SUBSCRIBE to job:refine:events:{job_id}; stream first message; close |
-| GET | /refine/status/{job_id} | Same pattern as train |
-| GET | /refine/last | Same pattern as train |
-| POST | /refine/promote | Synchronous run_promote(); longer timeout. Return `{ "promoted", "message", "acc_before", "acc_after" }`; 400 if train_candidate missing; 200 with promoted: false if metrics did not improve |
+| POST | /refine/relabel | Create job; background relabel run; return `{ "job_id", "run_id" }` |
+| GET | /refine/relabel/events/{job_id} | SSE: SUBSCRIBE to job:refine:relabel:events:{job_id}; stream messages until completed/failed; close |
+| POST | /refine/augment | Create job; background augment run; return `{ "job_id", "run_id" }` |
+| GET | /refine/augment/events/{job_id} | SSE: SUBSCRIBE to job:refine:augment:events:{job_id}; stream messages until completed/failed; close |
+| POST | /refine/promote | Synchronous run_promote(); body `{ "run_id": "..." }` optional. Return `{ "promoted", "message", "acc_before", "acc_after" }`; 400 if candidate missing; 200 with promoted: false if metrics did not improve |
 
 ### 4.4 Background Job Behavior
 
@@ -204,10 +204,10 @@ flowchart LR
 | GET /api/train/events/{job_id} | GET /train/events/{job_id} | Streaming proxy (SSE) |
 | GET /api/train/status/{job_id} | GET /train/status/{job_id} | |
 | GET /api/train/last | GET /train/last | |
-| POST /api/refine | POST /refine | Normal timeout |
-| GET /api/refine/events/{job_id} | GET /refine/events/{job_id} | Streaming proxy (SSE) |
-| GET /api/refine/status/{job_id} | GET /refine/status/{job_id} | |
-| GET /api/refine/last | GET /refine/last | |
+| POST /api/refine/relabel | POST /refine/relabel | Normal timeout |
+| GET /api/refine/relabel/events/{job_id} | GET /refine/relabel/events/{job_id} | Streaming proxy (SSE) |
+| POST /api/refine/augment | POST /refine/augment | Normal timeout |
+| GET /api/refine/augment/events/{job_id} | GET /refine/augment/events/{job_id} | Streaming proxy (SSE) |
 | POST /api/refine/promote | POST /refine/promote | Longer timeout (e.g. 5 min) |
 
 ### 5.3 Streaming Proxy
@@ -244,8 +244,10 @@ flowchart LR
 
 ### 6.3 Refine Page
 
-- **Run refinement:** POST /api/refine; progress bar; EventSource
-  /api/refine/events/{job_id}; on event render report, comparison, tables.
+- **Run relabeling:** POST /api/refine/relabel; progress bar; EventSource
+  /api/refine/relabel/events/{job_id}; on event render comparison and tables.
+- **Run augmentation:** POST /api/refine/augment; progress bar; EventSource
+  /api/refine/augment/events/{job_id}; on event render comparison and tables.
 - **Report:** Summary from refinement_report (rows_processed, relabels_proposed,
   examples_proposed, rows_skipped, errors) as small table or definition list.
 - **Comparison:** Metrics before and metrics after in same structure as Train

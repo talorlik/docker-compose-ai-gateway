@@ -1,8 +1,8 @@
 (function () {
   "use strict";
 
-  const refineRunBtn = document.getElementById("refine-run-btn");
-  const refineLastBtn = document.getElementById("refine-last-btn");
+  const relabelRunBtn = document.getElementById("relabel-run-btn");
+  const augmentRunBtn = document.getElementById("augment-run-btn");
   const refinePromoteBtn = document.getElementById("refine-promote-btn");
   const refinePromoteActions = document.getElementById("refine-promote-actions");
   const refineProgress = document.getElementById("refine-progress");
@@ -13,6 +13,7 @@
   const refineComparisonContent = document.getElementById("refine-comparison-content");
   const refineTables = document.getElementById("refine-tables");
   const refineTablesContent = document.getElementById("refine-tables-content");
+  let lastRunId = null;
 
   function escapeHtml(s) {
     if (typeof s !== "string") return "";
@@ -22,9 +23,9 @@
   }
 
   function setRefineRunning(running) {
-    refineRunBtn.disabled = running;
+    relabelRunBtn.disabled = running;
+    augmentRunBtn.disabled = running;
     refinePromoteBtn.disabled = running;
-    if (refineLastBtn) refineLastBtn.disabled = running;
     if (running) {
       refineProgress.classList.remove("hidden");
       refineMessage.classList.add("hidden");
@@ -39,8 +40,8 @@
 
   function setRefinePromoting(promoting) {
     refinePromoteBtn.disabled = promoting;
-    refineRunBtn.disabled = promoting;
-    if (refineLastBtn) refineLastBtn.disabled = promoting;
+    relabelRunBtn.disabled = promoting;
+    augmentRunBtn.disabled = promoting;
     if (promoting) {
       refineProgress.classList.remove("hidden");
       refineProgress.querySelector(".progress-label").textContent = "Promoting...";
@@ -241,21 +242,34 @@
 
   function renderRefineResult(result) {
     refineMessage.classList.add("hidden");
-    renderRefineReport(result.report);
-    renderRefineComparison(result.metrics_before, result.metrics_after);
+    // Backwards compatible renderer: if the backend returns the old shape,
+    // render full report; otherwise render what we have.
+    if (result.report) {
+      renderRefineReport(result.report);
+    } else {
+      refineReport.classList.add("hidden");
+    }
+    if (result.metrics_before || result.metrics_after) {
+      renderRefineComparison(result.metrics_before, result.metrics_after);
+    } else {
+      refineComparison.classList.add("hidden");
+    }
     renderRefineTables(
-      result.proposed_relabels,
-      result.proposed_examples,
-      result.train_candidate_sample
+      result.proposed_relabels || [],
+      result.proposed_examples || [],
+      result.train_candidate_sample || []
     );
     if (refinePromoteActions) refinePromoteActions.classList.remove("hidden");
   }
 
-  refineRunBtn.addEventListener("click", async () => {
-    if (refineRunBtn.disabled) return;
+  async function runPhase(phase) {
+    const endpoint = phase === "relabel" ? "/api/refine/relabel" : "/api/refine/augment";
+    const eventsPath = phase === "relabel" ? "/api/refine/relabel/events/" : "/api/refine/augment/events/";
     setRefineRunning(true);
     try {
-      const resp = await fetch("/api/refine", {
+      refineProgress.querySelector(".progress-label").textContent =
+        phase === "relabel" ? "Relabeling..." : "Augmenting...";
+      const resp = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -266,13 +280,14 @@
         return;
       }
       const jobId = data.job_id;
+      lastRunId = data.run_id || null;
       if (!jobId) {
         setRefineRunning(false);
         showRefineError("No job_id in response");
         return;
       }
       const eventUrl =
-        window.location.origin + "/api/refine/events/" + encodeURIComponent(jobId);
+        window.location.origin + eventsPath + encodeURIComponent(jobId);
       const es = new EventSource(eventUrl);
       es.onmessage = (ev) => {
         try {
@@ -309,6 +324,16 @@
       setRefineRunning(false);
       showRefineError(err.message || "Network error");
     }
+  }
+
+  relabelRunBtn.addEventListener("click", async () => {
+    if (relabelRunBtn.disabled) return;
+    await runPhase("relabel");
+  });
+
+  augmentRunBtn.addEventListener("click", async () => {
+    if (augmentRunBtn.disabled) return;
+    await runPhase("augment");
   });
 
   refinePromoteBtn.addEventListener("click", async () => {
@@ -319,6 +344,7 @@
       const resp = await fetch("/api/refine/promote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id: lastRunId }),
       });
       const data = await resp.json();
       setRefinePromoting(false);
@@ -348,31 +374,4 @@
     }
   });
 
-  if (refineLastBtn) {
-    refineLastBtn.addEventListener("click", async () => {
-      if (refineLastBtn.disabled) return;
-      refineLastBtn.disabled = true;
-      refineMessage.classList.add("hidden");
-      try {
-        const resp = await fetch("/api/refine/last");
-        if (resp.status === 404) {
-          showRefineMessage("No previous refinement run found.", "info");
-          refineReport.classList.add("hidden");
-          refineComparison.classList.add("hidden");
-          refineTables.classList.add("hidden");
-          return;
-        }
-        if (!resp.ok) {
-          showRefineError("Load last run failed: " + resp.status);
-          return;
-        }
-        const result = await resp.json();
-        renderRefineResult(result);
-      } catch (err) {
-        showRefineError(err.message || "Network error");
-      } finally {
-        refineLastBtn.disabled = false;
-      }
-    });
-  }
 })();

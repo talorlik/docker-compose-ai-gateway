@@ -26,12 +26,12 @@ technical stakeholders.
 The system is a locally runnable, multi-container microservice mesh where
 an AI classifier selects the backend service for each incoming request.
 The browser UI provides Query (main API and trace), Train (run training,
-view metrics and misclassified table), and Refine (run refinement, view
-report and comparison, promote candidate). Train and Refine job completion
-is event-driven via Redis Pub/Sub and Server-Sent Events (no polling). The
-stack demonstrates Docker Compose advanced features (profiles, health
-checks, anchors) and AI-driven intent routing without external
-observability dependencies.
+view metrics and misclassified table), and Refine (run relabeling or
+augmentation, view comparison, promote candidate). Train and Refine job
+completion is event-driven via Redis Pub/Sub and Server-Sent Events (no
+polling). The stack demonstrates Docker Compose advanced features
+(profiles, health checks, anchors) and AI-driven intent routing without
+external observability dependencies.
 
 ### 1.2 Architecture Principles
 
@@ -98,26 +98,30 @@ flowchart TB
     end
     Redis[Redis]
     Trainer[trainer]
-    Refiner[refiner]
+    Refiner[refiner (legacy)]
   end
 
   subgraph ollama_svc [Ollama - profile refine]
-    Ollama[Ollama]
+    Ollama1[Ollama_1]
+    Ollama2[Ollama_2]
+    Ollama3[Ollama_3]
   end
 
   subgraph volumes [Volumes]
     MA[model_artifacts]
-    OD[ollama_data]
+    OD1[ollama_data_1]
+    OD2[ollama_data_2]
+    OD3[ollama_data_3]
   end
 
   UI -->|GET /, POST /api/request| GW
-  UI -->|POST /api/train, POST /api/refine, SSE events, POST promote| GW
+  UI -->|POST /api/train, POST /api/refine/relabel_or_augment, SSE events, POST promote| GW
 
   GW -->|POST /classify| AR
   GW -->|POST /handle| SS
   GW -->|POST /handle| IS
   GW -->|POST /handle| OS
-  GW -->|proxy train/refine/promote, proxy SSE| API
+  GW -->|proxy train/relabel/augment/promote, proxy SSE| API
 
   API -->|job state, PUBLISH/SUBSCRIBE| Redis
   API -->|docker compose run| Trainer
@@ -126,8 +130,12 @@ flowchart TB
   Refiner -->|read/write| MA
   API -->|read artifacts| MA
   AR -->|load model| MA
-  Refiner -->|LLM prompts| Ollama
-  Ollama -->|persist| OD
+  API -->|LLM prompts via pool| Ollama1
+  API -->|LLM prompts via pool| Ollama2
+  API -->|LLM prompts via pool| Ollama3
+  Ollama1 -->|persist| OD1
+  Ollama2 -->|persist| OD2
+  Ollama3 -->|persist| OD3
 ```
 
 **Flows:**
@@ -138,8 +146,10 @@ flowchart TB
   opens SSE to gateway -> training-api subscribes to Redis; background task
   runs trainer via Compose, writes to model_artifacts, then PUBLISHes;
   client gets one SSE event and renders metrics/misclassified.
-- **Refine:** Same pattern with refiner (and Ollama for LLM). UI gets report,
-  comparison, tables; Promote button calls POST /api/refine/promote.
+- **Refine:** Same job pattern, but split into relabeling and augmentation
+  endpoints. Training API enqueues tasks into Redis Streams, workers call an
+  Ollama pool (multi-instance), then UI renders before/after metrics and
+  proposed rows; Promote calls POST /api/refine/promote with run_id.
 
 ## 3. Components
 
@@ -154,8 +164,10 @@ flowchart TB
   - `GET /health` - Health check
   - `POST /api/train`, `GET /api/train/events/{job_id}`,
     `GET /api/train/status/{job_id}`, `GET /api/train/last` - Proxy to training-api
-  - `POST /api/refine`, `GET /api/refine/events/{job_id}`,
-    `GET /api/refine/status/{job_id}`, `GET /api/refine/last` - Proxy to training-api
+  - `POST /api/refine/relabel`, `GET /api/refine/relabel/events/{job_id}` - Proxy
+  to training-api
+  - `POST /api/refine/augment`, `GET /api/refine/augment/events/{job_id}` - Proxy
+  to training-api
   - `POST /api/refine/promote` - Proxy to training-api (longer timeout, e.g. 5 min)
 - **Responsibilities:**
   - Generate or accept `request_id` (UUID)

@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -171,7 +171,9 @@ async def lifespan(application: FastAPI):
         limits=httpx.Limits(max_connections=100, max_keepalive_connections=0),
     )
     yield
-    await application.state.http.aclose()
+    http = getattr(application.state, "http", None)
+    if http is not None:
+        await http.aclose()
 
 
 app = FastAPI(title="Gateway", version="0.1.0", lifespan=lifespan)
@@ -285,45 +287,47 @@ async def proxy_get_train_events(job_id: str):
     )
 
 
-@app.post("/api/refine")
-async def proxy_post_refine():
-    """Proxy POST /refine to training-api (Batch 7)."""
+@app.post("/api/refine/relabel")
+async def proxy_post_refine_relabel():
+    """Proxy POST /refine/relabel to training-api."""
     http = app.state.http
     try:
-        r = await http.post(f"{TRAINING_API_URL.rstrip('/')}/refine")
+        r = await http.post(f"{TRAINING_API_URL.rstrip('/')}/refine/relabel")
         return JSONResponse(status_code=r.status_code, content=r.json())
     except (httpx.ConnectError, httpx.TimeoutException) as err:
         return _training_api_proxy_error(err)
 
 
-@app.get("/api/refine/status/{job_id}")
-async def proxy_get_refine_status(job_id: str):
-    """Proxy GET /refine/status/{job_id} to training-api (Batch 7)."""
+@app.get("/api/refine/relabel/events/{job_id}")
+async def proxy_get_refine_relabel_events(job_id: str):
+    """Stream GET /refine/relabel/events/{job_id} from training-api."""
+    url = f"{TRAINING_API_URL.rstrip('/')}/refine/relabel/events/{job_id}"
+    return StreamingResponse(
+        _stream_training_api_events(url),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/refine/augment")
+async def proxy_post_refine_augment():
+    """Proxy POST /refine/augment to training-api."""
     http = app.state.http
     try:
-        r = await http.get(
-            f"{TRAINING_API_URL.rstrip('/')}/refine/status/{job_id}"
-        )
+        r = await http.post(f"{TRAINING_API_URL.rstrip('/')}/refine/augment")
         return JSONResponse(status_code=r.status_code, content=r.json())
     except (httpx.ConnectError, httpx.TimeoutException) as err:
         return _training_api_proxy_error(err)
 
 
-@app.get("/api/refine/last")
-async def proxy_get_refine_last():
-    """Proxy GET /refine/last to training-api (Batch 7)."""
-    http = app.state.http
-    try:
-        r = await http.get(f"{TRAINING_API_URL.rstrip('/')}/refine/last")
-        return JSONResponse(status_code=r.status_code, content=r.json())
-    except (httpx.ConnectError, httpx.TimeoutException) as err:
-        return _training_api_proxy_error(err)
-
-
-@app.get("/api/refine/events/{job_id}")
-async def proxy_get_refine_events(job_id: str):
-    """Stream GET /refine/events/{job_id} from training-api (Batch 8)."""
-    url = f"{TRAINING_API_URL.rstrip('/')}/refine/events/{job_id}"
+@app.get("/api/refine/augment/events/{job_id}")
+async def proxy_get_refine_augment_events(job_id: str):
+    """Stream GET /refine/augment/events/{job_id} from training-api."""
+    url = f"{TRAINING_API_URL.rstrip('/')}/refine/augment/events/{job_id}"
     return StreamingResponse(
         _stream_training_api_events(url),
         media_type="text/event-stream",
@@ -336,14 +340,16 @@ async def proxy_get_refine_events(job_id: str):
 
 
 @app.post("/api/refine/promote")
-async def proxy_post_refine_promote():
+async def proxy_post_refine_promote(req: Request):
     """Proxy POST /refine/promote with long timeout (Batch 7)."""
     try:
+        body = await req.json()
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(PROMOTE_TIMEOUT)
         ) as client:
             r = await client.post(
-                f"{TRAINING_API_URL.rstrip('/')}/refine/promote"
+                f"{TRAINING_API_URL.rstrip('/')}/refine/promote",
+                json=body,
             )
             return JSONResponse(status_code=r.status_code, content=r.json())
     except (httpx.ConnectError, httpx.TimeoutException) as err:

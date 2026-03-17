@@ -6,6 +6,7 @@ completion via SSE. Batch 5: train endpoints. Batch 6: refine and promote.
 
 from __future__ import annotations
 
+import os
 import json
 import logging
 import threading
@@ -14,13 +15,12 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.jobs.runner import (
     _refiner_error_short_message,
-    get_last_refine_result,
     get_last_train_result,
     run_promote,
-    run_refine,
     run_train,
 )
 from app.redis_client import (
@@ -31,12 +31,17 @@ from app.redis_client import (
     subscribe_to_job_channel,
     subscribe_to_job_channel_until_done,
 )
+from app.refine.augment import run_augment_phase
+from app.refine.config import RefineConfig
+from app.refine.relabel import run_relabel_phase
 
 # Redis key/channel patterns (TECH §3)
 TRAIN_KEY_PREFIX = "job:train:"
 TRAIN_EVENTS_CHANNEL_PREFIX = "job:train:events:"
-REFINE_KEY_PREFIX = "job:refine:"
-REFINE_EVENTS_CHANNEL_PREFIX = "job:refine:events:"
+REFINE_RELABEL_KEY_PREFIX = "job:refine:relabel:"
+REFINE_RELABEL_EVENTS_CHANNEL_PREFIX = "job:refine:relabel:events:"
+REFINE_AUGMENT_KEY_PREFIX = "job:refine:augment:"
+REFINE_AUGMENT_EVENTS_CHANNEL_PREFIX = "job:refine:augment:events:"
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +75,9 @@ def _train_job_runner(job_id: str) -> None:
         publish_job_event(channel, {"status": "failed", "error": str(e)})
 
 
-def _refine_job_runner(job_id: str) -> None:
-    """Background: SET pending already done by caller; run_refine(); SET result + PUBLISH."""
-    key = f"{REFINE_KEY_PREFIX}{job_id}"
-    channel = f"{REFINE_EVENTS_CHANNEL_PREFIX}{job_id}"
+def _relabel_job_runner(job_id: str, run_id: str) -> None:
+    key = f"{REFINE_RELABEL_KEY_PREFIX}{job_id}"
+    channel = f"{REFINE_RELABEL_EVENTS_CHANNEL_PREFIX}{job_id}"
     now = datetime.now(timezone.utc).isoformat()
 
     def _progress(detail: str) -> None:
@@ -81,7 +85,16 @@ def _refine_job_runner(job_id: str) -> None:
         publish_job_event(channel, {"status": "progress", "detail": detail})
 
     try:
-        result = run_refine(progress_callback=_progress)
+        cfg = RefineConfig.from_env(os.environ.get("MODEL_ARTIFACTS_PATH", "/model"))
+        artifacts_dir = os.environ.get("MODEL_ARTIFACTS_PATH", "/model")
+        promote_dir = os.environ.get("PROMOTE_TARGET_PATH", "/promote_target")
+        result = run_relabel_phase(
+            cfg,
+            model_artifacts_path=artifacts_dir,
+            promote_target_path=promote_dir,
+            run_id=run_id,
+            progress=lambda ev: _progress(ev.get("detail", "Running...")),
+        )
         set_job_state(key, {
             "status": "completed",
             "result": result,
@@ -91,7 +104,49 @@ def _refine_job_runner(job_id: str) -> None:
     except Exception as e:
         full_error = str(e)
         short_error = getattr(e, "short_message", None) or _refiner_error_short_message(full_error)
-        logger.exception("Refine job failed")
+        logger.exception("Relabel job failed")
+        set_job_state(key, {
+            "status": "failed",
+            "error": short_error,
+            "error_detail": full_error,
+            "created_at": now,
+        })
+        publish_job_event(channel, {
+            "status": "failed",
+            "error": short_error,
+            "error_detail": full_error,
+        })
+
+
+def _augment_job_runner(job_id: str, run_id: str) -> None:
+    key = f"{REFINE_AUGMENT_KEY_PREFIX}{job_id}"
+    channel = f"{REFINE_AUGMENT_EVENTS_CHANNEL_PREFIX}{job_id}"
+    now = datetime.now(timezone.utc).isoformat()
+
+    def _progress(detail: str) -> None:
+        publish_job_event(channel, {"status": "progress", "detail": detail})
+
+    try:
+        cfg = RefineConfig.from_env(os.environ.get("MODEL_ARTIFACTS_PATH", "/model"))
+        artifacts_dir = os.environ.get("MODEL_ARTIFACTS_PATH", "/model")
+        promote_dir = os.environ.get("PROMOTE_TARGET_PATH", "/promote_target")
+        result = run_augment_phase(
+            cfg,
+            model_artifacts_path=artifacts_dir,
+            promote_target_path=promote_dir,
+            run_id=run_id,
+            progress=lambda ev: _progress(ev.get("detail", "Running...")),
+        )
+        set_job_state(key, {
+            "status": "completed",
+            "result": result,
+            "created_at": now,
+        })
+        publish_job_event(channel, {"status": "completed", "result": result})
+    except Exception as e:
+        full_error = str(e)
+        short_error = getattr(e, "short_message", None) or _refiner_error_short_message(full_error)
+        logger.exception("Augment job failed")
         set_job_state(key, {
             "status": "failed",
             "error": short_error,
@@ -194,39 +249,21 @@ def get_train_last() -> dict:
 
 
 # Refine endpoints (Batch 6)
-@app.post("/refine")
-def post_refine() -> dict:
-    """Create job; SET pending; start background run_refine(); return job_id immediately."""
+@app.post("/refine/relabel")
+def post_refine_relabel() -> dict:
     job_id = str(uuid.uuid4())
-    key = f"{REFINE_KEY_PREFIX}{job_id}"
+    run_id = str(uuid.uuid4())
+    key = f"{REFINE_RELABEL_KEY_PREFIX}{job_id}"
     now = datetime.now(timezone.utc).isoformat()
-    set_job_state(key, {"status": "pending", "created_at": now})
-    thread = threading.Thread(target=_refine_job_runner, args=(job_id,))
+    set_job_state(key, {"status": "pending", "created_at": now, "run_id": run_id})
+    thread = threading.Thread(target=_relabel_job_runner, args=(job_id, run_id))
     thread.daemon = True
     thread.start()
-    return {"job_id": job_id}
+    return {"job_id": job_id, "run_id": run_id}
 
 
-@app.get("/refine/status/{job_id}")
-def get_refine_status(job_id: str) -> dict:
-    """Read Redis key; return job_id, status, result, error; 404 if missing."""
-    key = f"{REFINE_KEY_PREFIX}{job_id}"
-    state = get_job_state(key)
-    if state is None:
-        raise HTTPException(status_code=404, detail="Job not found or expired")
-    return {
-        "job_id": job_id,
-        "status": state.get("status", "unknown"),
-        "result": state.get("result"),
-        "error": state.get("error"),
-    }
-
-
-def _refine_events_sse_generator(job_id: str):
-    """Yield SSE data lines from Redis refine channel; streams progress then final result.
-    If job already completed/failed (e.g. client connected late), send state immediately.
-    """
-    key = f"{REFINE_KEY_PREFIX}{job_id}"
+def _relabel_events_sse_generator(job_id: str):
+    key = f"{REFINE_RELABEL_KEY_PREFIX}{job_id}"
     state = get_job_state(key)
     if state and state.get("status") in ("completed", "failed"):
         payload = {"status": state["status"]}
@@ -238,16 +275,15 @@ def _refine_events_sse_generator(job_id: str):
             payload["error_detail"] = state["error_detail"]
         yield f"data: {json.dumps(payload)}\n\n"
         return
-    channel = f"{REFINE_EVENTS_CHANNEL_PREFIX}{job_id}"
+    channel = f"{REFINE_RELABEL_EVENTS_CHANNEL_PREFIX}{job_id}"
     for message in subscribe_to_job_channel_until_done(channel):
         yield f"data: {message}\n\n"
 
 
-@app.get("/refine/events/{job_id}")
-def get_refine_events(job_id: str):
-    """SSE: SUBSCRIBE to refine channel; stream first message as SSE; close."""
+@app.get("/refine/relabel/events/{job_id}")
+def get_refine_relabel_events(job_id: str):
     return StreamingResponse(
-        _refine_events_sse_generator(job_id),
+        _relabel_events_sse_generator(job_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -257,18 +293,77 @@ def get_refine_events(job_id: str):
     )
 
 
-@app.get("/refine/last")
-def get_refine_last() -> dict:
-    """Read last refine run from volume. 404 if absent."""
-    result = get_last_refine_result()
-    if result is None:
-        raise HTTPException(status_code=404, detail="No previous refine run found")
-    return result
+@app.post("/refine/augment")
+def post_refine_augment() -> dict:
+    job_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
+    key = f"{REFINE_AUGMENT_KEY_PREFIX}{job_id}"
+    now = datetime.now(timezone.utc).isoformat()
+    set_job_state(key, {"status": "pending", "created_at": now, "run_id": run_id})
+    thread = threading.Thread(target=_augment_job_runner, args=(job_id, run_id))
+    thread.daemon = True
+    thread.start()
+    return {"job_id": job_id, "run_id": run_id}
+
+
+def _augment_events_sse_generator(job_id: str):
+    key = f"{REFINE_AUGMENT_KEY_PREFIX}{job_id}"
+    state = get_job_state(key)
+    if state and state.get("status") in ("completed", "failed"):
+        payload = {"status": state["status"]}
+        if state.get("result") is not None:
+            payload["result"] = state["result"]
+        if state.get("error") is not None:
+            payload["error"] = state["error"]
+        if state.get("error_detail") is not None:
+            payload["error_detail"] = state["error_detail"]
+        yield f"data: {json.dumps(payload)}\n\n"
+        return
+    channel = f"{REFINE_AUGMENT_EVENTS_CHANNEL_PREFIX}{job_id}"
+    for message in subscribe_to_job_channel_until_done(channel):
+        yield f"data: {message}\n\n"
+
+
+@app.get("/refine/augment/events/{job_id}")
+def get_refine_augment_events(job_id: str):
+    return StreamingResponse(
+        _augment_events_sse_generator(job_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/refine/promote")
-def post_refine_promote() -> dict:
-    """Synchronous run_promote(); return promoted, message, acc_before, acc_after. 400 if train_candidate missing."""
+class PromoteRequest(BaseModel):
+    run_id: str | None = None
+
+
+@app.post("/refine/promote")
+def post_refine_promote(body: PromoteRequest) -> dict:
+    """Promote a run's candidate dataset if metrics improved.
+
+    If run_id is omitted, fall back to legacy behavior (train_candidate.csv in
+    root artifacts dir).
+    """
+    if body.run_id:
+        import shutil
+
+        artifacts_dir = os.environ.get("MODEL_ARTIFACTS_PATH", "/model")
+        cfg = RefineConfig.from_env(artifacts_dir)
+        cand = cfg.augment_candidate_csv(body.run_id)
+        before = cfg.metrics_before_path(body.run_id)
+        if not cand.exists():
+            cand = cfg.relabel_candidate_csv(body.run_id)
+        if not cand.exists():
+            raise HTTPException(status_code=400, detail="No candidate CSV found for run_id")
+
+        shutil.copy2(cand, os.path.join(artifacts_dir, "train_candidate.csv"))
+        if before.exists():
+            shutil.copy2(before, os.path.join(artifacts_dir, "metrics_before.json"))
     try:
         return run_promote()
     except FileNotFoundError as e:
