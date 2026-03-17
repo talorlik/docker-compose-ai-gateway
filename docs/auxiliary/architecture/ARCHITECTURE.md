@@ -367,6 +367,11 @@ Each trace entry: `service`, `event`, `ts` (ISO 8601), optional `meta`.
 - **Base:** `compose/docker-compose.yaml` - anchors (x-common-env,
   x-common-healthcheck, x-common-logging), health checks, profiles. Services
   run from built images.
+- **Central config:** `config/PROJECT_CONFIG.yaml` - single source of truth for
+  project-wide settings (paths, Redis URL, Ollama pool, refine knobs); see
+  `CONFIGURATION.md` for details. Env files such as `env/.env.dev` are
+  generated from this file via `scripts/generate_env.py` and consumed by
+  Docker Compose (`env_file`).
 - **Dev overlay:** `compose/docker-compose.dev.yaml` - overlay merged with the
   base via a second `-f`; adds bind mounts and `uvicorn --reload` for the five
   app services so source changes apply without rebuild. Launch with both files:

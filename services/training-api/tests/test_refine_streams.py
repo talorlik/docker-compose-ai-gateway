@@ -30,13 +30,15 @@ def _cfg(tmp_path) -> RefineConfig:
     return RefineConfig(
         runs_root=tmp_path / "runs",
         relabel_batch_size=2,
-        relabel_max_parallel_batches=2,
+        relabel_max_parallel_batches=1,
         augment_n_per_label=3,
-        augment_max_parallel_labels=2,
+        augment_max_parallel_labels=1,
         ollama_urls=["http://ollama1:11434"],
         ollama_model="phi3:mini",
         ollama_timeout_seconds=10,
         ollama_max_inflight_per_instance=2,
+        ollama_num_ctx=512,
+        ollama_num_predict=128,
         relabel_tasks_stream="test:relabel:tasks",
         augment_tasks_stream="test:augment:tasks",
         relabel_consumer_group="relabel-workers",
@@ -206,6 +208,8 @@ def test_run_relabel_workers_processes_batch(tmp_path):
             [("entry-1", entry_fields)],
             [],
         ]),
+        patch.object(relabel_mod, "stream_auto_claim_pending", return_value=[]),
+        patch.object(relabel_mod, "stream_get_delivery_count", return_value=None),
         patch.object(relabel_mod, "stream_ack") as mock_ack,
         patch.object(relabel_mod, "publish_event"),
         patch.object(relabel_mod, "get_ollama_pool", return_value=pool),
@@ -249,6 +253,8 @@ def test_run_augment_workers_processes_label(tmp_path):
             [("entry-1", entry_fields)],
             [],
         ]),
+        patch.object(augment_mod, "stream_auto_claim_pending", return_value=[]),
+        patch.object(augment_mod, "stream_get_delivery_count", return_value=None),
         patch.object(augment_mod, "stream_ack") as mock_ack,
         patch.object(augment_mod, "publish_event"),
         patch.object(augment_mod, "get_ollama_pool", return_value=pool),
@@ -279,6 +285,8 @@ def test_augment_worker_skips_wrong_run_id(tmp_path):
             [("entry-1", entry_fields)],
             [],
         ]),
+        patch.object(augment_mod, "stream_auto_claim_pending", return_value=[]),
+        patch.object(augment_mod, "stream_get_delivery_count", return_value=None),
         patch.object(augment_mod, "stream_ack") as mock_ack,
         patch.object(augment_mod, "publish_event"),
         patch.object(augment_mod, "get_ollama_pool", return_value=pool),
@@ -289,7 +297,7 @@ def test_augment_worker_skips_wrong_run_id(tmp_path):
     pool.generate.assert_not_called()
 
 
-def test_relabel_worker_publishes_error_on_bad_ollama_response(tmp_path):
+def test_relabel_worker_publishes_error_on_bad_ollama_response(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
     run_id = "r4"
     cfg.relabel_dir(run_id).mkdir(parents=True, exist_ok=True)
@@ -303,6 +311,8 @@ def test_relabel_worker_publishes_error_on_bad_ollama_response(tmp_path):
     pool = MagicMock(spec=OllamaPool)
     pool.generate.return_value = "not json"
 
+    monkeypatch.setenv("REFINER_RELABEL_MAX_RETRIES", "1")
+
     progress_events = []
     with (
         patch.object(relabel_mod, "stream_group_create"),
@@ -310,6 +320,8 @@ def test_relabel_worker_publishes_error_on_bad_ollama_response(tmp_path):
             [("entry-1", entry_fields)],
             [],
         ]),
+        patch.object(relabel_mod, "stream_auto_claim_pending", return_value=[]),
+        patch.object(relabel_mod, "stream_get_delivery_count", return_value=1),
         patch.object(relabel_mod, "stream_ack") as mock_ack,
         patch.object(relabel_mod, "publish_event"),
         patch.object(relabel_mod, "get_ollama_pool", return_value=pool),
@@ -321,7 +333,105 @@ def test_relabel_worker_publishes_error_on_bad_ollama_response(tmp_path):
             progress=lambda evt: progress_events.append(evt),
         )
 
-    # Should NOT ack on failure (left for retry)
-    mock_ack.assert_not_called()
+    # Acked after reaching max retries so the job can finish
+    mock_ack.assert_called_once_with("test:relabel:tasks", f"relabel-workers:{run_id}", "entry-1")
     # Should publish an error progress event
     assert any("failed" in str(evt.get("detail", "")).lower() for evt in progress_events)
+
+
+def test_relabel_worker_reclaims_pending_entry_and_processes(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    run_id = "r5"
+    cfg.relabel_dir(run_id).mkdir(parents=True, exist_ok=True)
+
+    entry_fields = {
+        "run_id": run_id,
+        "batch_id": "0000",
+        "rows": json.dumps([{"text": "hello", "true_label": "search", "pred_label": "ops"}]),
+    }
+
+    pool = MagicMock(spec=OllamaPool)
+    pool.generate.return_value = json.dumps(
+        [{"text": "hello", "suggested_label": "search", "reason": "ok", "confidence": 0.9}]
+    )
+
+    monkeypatch.setenv("REFINER_RELABEL_MAX_RETRIES", "3")
+
+    with (
+        patch.object(relabel_mod, "stream_group_create"),
+        patch.object(relabel_mod, "stream_read_group", side_effect=[[], []]),
+        patch.object(relabel_mod, "stream_auto_claim_pending", side_effect=[
+            [("entry-1", entry_fields)],
+            [],
+        ]),
+        patch.object(relabel_mod, "stream_get_delivery_count", return_value=None),
+        patch.object(relabel_mod, "stream_ack") as mock_ack,
+        patch.object(relabel_mod, "publish_event"),
+        patch.object(relabel_mod, "get_ollama_pool", return_value=pool),
+    ):
+        run_relabel_workers(cfg, run_id=run_id, expected_batches=1)
+
+    mock_ack.assert_called_once_with("test:relabel:tasks", f"relabel-workers:{run_id}", "entry-1")
+
+
+def test_relabel_worker_acks_after_max_retries(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    run_id = "r6"
+    cfg.relabel_dir(run_id).mkdir(parents=True, exist_ok=True)
+
+    entry_fields = {
+        "run_id": run_id,
+        "batch_id": "0000",
+        "rows": json.dumps([{"text": "x", "true_label": "search", "pred_label": "ops"}]),
+    }
+
+    pool = MagicMock(spec=OllamaPool)
+    pool.generate.return_value = "not json"
+
+    monkeypatch.setenv("REFINER_RELABEL_MAX_RETRIES", "1")
+
+    with (
+        patch.object(relabel_mod, "stream_group_create"),
+        patch.object(relabel_mod, "stream_read_group", side_effect=[
+            [("entry-1", entry_fields)],
+            [],
+        ]),
+        patch.object(relabel_mod, "stream_auto_claim_pending", return_value=[]),
+        patch.object(relabel_mod, "stream_get_delivery_count", return_value=1),
+        patch.object(relabel_mod, "stream_ack") as mock_ack,
+        patch.object(relabel_mod, "publish_event"),
+        patch.object(relabel_mod, "get_ollama_pool", return_value=pool),
+    ):
+        run_relabel_workers(cfg, run_id=run_id, expected_batches=1)
+
+    # Acked after reaching max retries so the job can finish
+    mock_ack.assert_called_once_with("test:relabel:tasks", f"relabel-workers:{run_id}", "entry-1")
+
+
+def test_augment_worker_acks_after_max_retries(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    run_id = "r7"
+    cfg.augment_dir(run_id).mkdir(parents=True, exist_ok=True)
+
+    entry_fields = {"run_id": run_id, "label": "search", "n": "3"}
+
+    pool = MagicMock(spec=OllamaPool)
+    pool.generate.return_value = "not json"
+
+    monkeypatch.setenv("REFINER_AUGMENT_MAX_RETRIES", "1")
+
+    with (
+        patch.object(augment_mod, "stream_group_create"),
+        patch.object(augment_mod, "stream_read_group", side_effect=[
+            [("entry-1", entry_fields)],
+            [],
+        ]),
+        patch.object(augment_mod, "stream_auto_claim_pending", return_value=[]),
+        patch.object(augment_mod, "stream_get_delivery_count", return_value=1),
+        patch.object(augment_mod, "stream_ack") as mock_ack,
+        patch.object(augment_mod, "publish_event"),
+        patch.object(augment_mod, "get_ollama_pool", return_value=pool),
+    ):
+        run_augment_workers(cfg, run_id=run_id, expected_labels=1)
+
+    mock_ack.assert_called_once_with("test:augment:tasks", f"augment-workers:{run_id}", "entry-1")

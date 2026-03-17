@@ -1,0 +1,38 @@
+default:
+  # Shared logging and Python runtime defaults
+  LOG_LEVEL: info
+  REQUEST_TIMEOUT: "30"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+
+  # Core paths used by training-api/refiner flows
+  MODEL_ARTIFACTS_PATH: /model
+  PROMOTE_TARGET_PATH: /promote_target
+  COMPOSE_WORKING_DIR: /workspace
+
+  # Redis
+  REDIS_URL: redis://redis:6379/0
+
+  # Ollama / refiner defaults
+  OLLAMA_MODEL: phi3:mini
+  OLLAMA_URLS: http://ollama_1:11434,http://ollama_2:11434,http://ollama_3:11434
+  OLLAMA_HOST: http://ollama_1:11434
+  OLLAMA_TIMEOUT_SECONDS: "300"
+  OLLAMA_MAX_INFLIGHT_PER_INSTANCE: "2"
+  OLLAMA_NUM_CTX: "2048"
+  OLLAMA_NUM_PREDICT: "256"
+
+  # Refiner limits and batching
+  REFINER_RELABEL_BATCH_SIZE: "25"
+  REFINER_RELABEL_MAX_PARALLEL_BATCHES: "4"
+  REFINER_AUGMENT_N_PER_LABEL: "3"
+  REFINER_AUGMENT_MAX_PARALLEL_LABELS: "4"
+  REFINER_LIMIT: "5"
+
+dev:
+  # Development-specific overrides (can be extended as needed)
+  LOG_LEVEL: debug
+
+prod:
+  # Production overrides go here (example only; adjust for your deployment)
+  LOG_LEVEL: info

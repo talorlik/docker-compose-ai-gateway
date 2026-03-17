@@ -191,8 +191,12 @@ routing policy.
 ```bash
 docker-compose-ai-gateway/
 ├── compose/
-│   ├── docker-compose.yaml          # Base configuration
+│   ├── docker-compose.yaml          # Base configuration (uses env/.env.<env> via env_file)
 │   └── docker-compose.dev.yaml      # Dev profile overrides
+├── config/
+│   └── PROJECT_CONFIG.yaml          # Central, environment-aware configuration
+├── env/
+│   └── .env.dev                     # Generated from PROJECT_CONFIG.yaml (per environment)
 ├── services/
 │   ├── gateway/
 │   │   ├── Dockerfile
@@ -235,6 +239,7 @@ docker-compose-ai-gateway/
 ├── scripts/
 │   ├── demo.sh                      # Full demo sequence
 │   └── load_test.sh                 # Load testing script
+│   └── generate_env.py              # Generate env/.env.<env> from PROJECT_CONFIG.yaml
 └── docs/
     └── auxiliary/
         ├── architecture/            # ARCHITECTURE.md, TECHNICAL.md
@@ -1080,7 +1085,15 @@ The refiner service automates dataset improvement using a local LLM. See
 [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md),
 [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md).
 
-### 13.4 Future Enhancements (Optional)
+### 13.4 Centralized Configuration
+
+Configuration for Redis, Ollama, refine parameters, and key paths is defined
+once in `config/PROJECT_CONFIG.yaml` and materialized into `env/.env.<env>`
+files via `scripts/generate_env.py`. Docker Compose consumes these env files
+with `env_file`, and services continue to read values via environment
+variables. For details, see `CONFIGURATION.md`.
+
+### 13.5 Future Enhancements (Optional)
 
 - Evaluator and promoter services (beyond scripts/promote.sh)
 - Enhanced explanations (top n-grams with weights)
@@ -1102,12 +1115,16 @@ The refiner service automates dataset improvement using a local LLM. See
 ### Start Services
 
 ```bash
+python scripts/generate_env.py dev
+
 docker compose -f compose/docker-compose.yaml up --build
 ```
 
 ### Start with Dev Profile
 
 ```bash
+python scripts/generate_env.py dev
+
 docker compose -f compose/docker-compose.yaml -f compose/docker-compose.dev.yaml --profile dev up
 ```
 

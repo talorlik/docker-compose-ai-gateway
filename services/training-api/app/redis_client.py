@@ -194,7 +194,10 @@ def stream_auto_claim_pending(
 
     Returns a list of (entry_id, fields) items, similar to stream_read_group.
     """
-    conn = get_connection()
+    try:
+        conn = get_connection()
+    except RuntimeError:
+        return []
     # xautoclaim returns (next_start_id, [ [entry_id, {field: value}], ... ])
     _next_id, entries = conn.xautoclaim(  # noqa: F841
         name=stream,
@@ -216,7 +219,10 @@ def stream_get_delivery_count(stream: str, group: str, entry_id: str) -> int | N
     Uses XPENDING RANGE to query a single entry; returns None if the entry is
     not pending or on error.
     """
-    conn = get_connection()
+    try:
+        conn = get_connection()
+    except RuntimeError:
+        return None
     try:
         pending = conn.xpending_range(
             name=stream,

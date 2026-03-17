@@ -58,6 +58,8 @@ class RefineConfig:
     ollama_model: str
     ollama_timeout_seconds: int
     ollama_max_inflight_per_instance: int
+    ollama_num_ctx: int
+    ollama_num_predict: int
 
     # Redis Streams (work queues) and events
     relabel_tasks_stream: str
@@ -79,11 +81,13 @@ class RefineConfig:
 
         return RefineConfig(
             runs_root=root,
-            relabel_batch_size=_get_int("REFINER_RELABEL_BATCH_SIZE", 10, min_value=1),
+            # Practical default: larger batches reduce prompt overhead.
+            relabel_batch_size=_get_int("REFINER_RELABEL_BATCH_SIZE", 25, min_value=1),
             relabel_max_parallel_batches=_get_int(
                 "REFINER_RELABEL_MAX_PARALLEL_BATCHES", 4, min_value=1
             ),
-            augment_n_per_label=_get_int("REFINER_AUGMENT_N_PER_LABEL", 5, min_value=1),
+            # Practical default: fewer examples per label reduces Ollama time.
+            augment_n_per_label=_get_int("REFINER_AUGMENT_N_PER_LABEL", 3, min_value=1),
             augment_max_parallel_labels=_get_int(
                 "REFINER_AUGMENT_MAX_PARALLEL_LABELS", 4, min_value=1
             ),
@@ -93,6 +97,10 @@ class RefineConfig:
             ollama_max_inflight_per_instance=_get_int(
                 "OLLAMA_MAX_INFLIGHT_PER_INSTANCE", 2, min_value=1
             ),
+            # Limits to control per-request work in Ollama. Keep conservative
+            # defaults so the refiner stays responsive on CPU-only machines.
+            ollama_num_ctx=_get_int("OLLAMA_NUM_CTX", 2048, min_value=128),
+            ollama_num_predict=_get_int("OLLAMA_NUM_PREDICT", 256, min_value=16),
             relabel_tasks_stream=_get_str("REFINE_RELABEL_TASKS_STREAM", "refine:relabel:tasks"),
             augment_tasks_stream=_get_str("REFINE_AUGMENT_TASKS_STREAM", "refine:augment:tasks"),
             relabel_consumer_group=_get_str("REFINE_RELABEL_CONSUMER_GROUP", "relabel-workers"),

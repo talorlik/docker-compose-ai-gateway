@@ -7,6 +7,10 @@ volumes:
   ollama_data_2:
   ollama_data_3:
 
+env_file_defaults: &env-file-defaults
+  env_file:
+    - ../env/.env.dev
+
 x-common-env: &common-env
   LOG_LEVEL: info
   REQUEST_TIMEOUT: "30"
@@ -223,6 +227,7 @@ services:
     build:
       context: ../services/training-api
       dockerfile: Dockerfile
+    <<: *env-file-defaults
     depends_on:
       redis:
         condition: service_started
@@ -234,14 +239,6 @@ services:
         condition: service_healthy
     environment:
       <<: *common-env
-      REDIS_URL: "redis://redis:6379/0"
-      COMPOSE_WORKING_DIR: /workspace
-      MODEL_ARTIFACTS_PATH: /model
-      PROMOTE_TARGET_PATH: /promote_target
-      OLLAMA_HOST: "http://ollama_1:11434"
-      OLLAMA_URLS: "http://ollama_1:11434,http://ollama_2:11434,http://ollama_3:11434"
-      OLLAMA_MODEL: "phi3:mini"
-      REFINER_LIMIT: "5"
     volumes:
       - ..:/workspace
       - model_artifacts:/model

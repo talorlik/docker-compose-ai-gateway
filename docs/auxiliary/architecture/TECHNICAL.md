@@ -1205,6 +1205,12 @@ Service URL env vars are not strictly required (the defaults in code
 match Compose service names), but making them explicit aids clarity
 and allows overriding in non-Compose environments.
 
+Centralized configuration for paths, Redis URL, Ollama pool, and refiner
+parameters lives in `config/PROJECT_CONFIG.yaml` and is materialized into
+flat env files (for example `env/.env.dev`) via `scripts/generate_env.py`;
+Docker Compose references these files with `env_file`. See
+`CONFIGURATION.md` for the configuration workflow.
+
 ### 16.2 Dev Overlay
 
 `compose/docker-compose.dev.yaml` overrides the CMD for hot reload

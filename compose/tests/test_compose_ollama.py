@@ -101,11 +101,3 @@ def test_training_api_depends_on_all_ollama_instances():
     for name in ("ollama_1", "ollama_2", "ollama_3"):
         assert name in deps, f"training-api must depend on {name}"
         assert deps[name].get("condition") == "service_healthy"
-
-
-def test_training_api_ollama_urls_env():
-    compose = _load_compose()
-    env = compose["services"]["training-api"].get("environment", {})
-    urls = env.get("OLLAMA_URLS", "")
-    for host in ("ollama_1", "ollama_2", "ollama_3"):
-        assert host in urls, f"OLLAMA_URLS must include {host}"

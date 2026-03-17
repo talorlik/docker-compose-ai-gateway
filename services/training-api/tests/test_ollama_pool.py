@@ -23,6 +23,8 @@ def _make_pool(**overrides) -> OllamaPool:
         model="phi3:mini",
         timeout_seconds=10,
         max_inflight_per_instance=2,
+        num_ctx=512,
+        num_predict=128,
     )
     defaults.update(overrides)
     return OllamaPool(**defaults)
@@ -197,6 +199,8 @@ def test_generate_calls_correct_endpoint():
     assert payload["prompt"] == "hello"
     assert payload["system"] == "sys"
     assert payload["stream"] is False
+    assert payload["options"]["num_ctx"] == 512
+    assert payload["options"]["num_predict"] == 128
 
 
 def test_generate_releases_instance_on_success():

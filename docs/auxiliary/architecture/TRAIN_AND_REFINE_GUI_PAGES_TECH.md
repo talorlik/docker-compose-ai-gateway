@@ -335,7 +335,13 @@ flowchart LR
   - Compose project directory (to run compose from correct context)
   - Host `services/trainer/train.csv` at `/promote_target/train.csv`
     (read-write for promotion)
-- **Env:** REDIS_URL or REDIS_HOST/REDIS_PORT.
+- **Env:** configuration is provided via env vars such as `REDIS_URL`,
+  `MODEL_ARTIFACTS_PATH`, `PROMOTE_TARGET_PATH`, `OLLAMA_URLS`, `OLLAMA_MODEL`,
+  and `REFINER_*`. These are populated from `config/PROJECT_CONFIG.yaml` by
+  generating env files (for example `env/.env.dev`) with
+  `scripts/generate_env.py` and referencing them via Docker Compose `env_file`.
+  Per-environment overrides should be done in `PROJECT_CONFIG.yaml`, not by
+  editing Compose directly.
 - **Profile:** e.g. `ops` or `refine` so one deployment deploys all; gateway may
   show "Training API not available" when profile inactive.
 - **CMD:** Default HTTP server; override for CLI: `docker compose run

@@ -183,6 +183,8 @@ def run_relabel_workers(
             model=cfg.ollama_model,
             timeout_seconds=cfg.ollama_timeout_seconds,
             max_inflight_per_instance=cfg.ollama_max_inflight_per_instance,
+            num_ctx=cfg.ollama_num_ctx,
+            num_predict=cfg.ollama_num_predict,
         )
 
     pool = get_ollama_pool(_mk_pool)

@@ -39,6 +39,8 @@ class OllamaPool:
         model: str,
         timeout_seconds: int,
         max_inflight_per_instance: int,
+        num_ctx: int,
+        num_predict: int,
         status_channel: str = "ollama:status",
         probe_interval_seconds: float = 2.0,
     ) -> None:
@@ -49,6 +51,8 @@ class OllamaPool:
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._max_inflight = max_inflight_per_instance
+        self._num_ctx = num_ctx
+        self._num_predict = num_predict
         self._status_channel = status_channel
         self._probe_interval_seconds = probe_interval_seconds
         self._stop = threading.Event()
@@ -110,6 +114,10 @@ class OllamaPool:
                 "model": self._model,
                 "prompt": prompt,
                 "stream": False,
+                "options": {
+                    "num_ctx": self._num_ctx,
+                    "num_predict": self._num_predict,
+                },
             }
             if system is not None:
                 payload["system"] = system

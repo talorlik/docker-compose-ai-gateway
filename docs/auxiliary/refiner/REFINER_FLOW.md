@@ -153,6 +153,19 @@ docker compose -f compose/docker-compose.yaml --profile train run --rm trainer
 docker compose -f compose/docker-compose.yaml restart ai_router
 ```
 
+Before running refine-related commands in a new environment, generate the env
+file from the centralized configuration:
+
+```bash
+python scripts/generate_env.py dev
+```
+
+This reads `config/PROJECT_CONFIG.yaml` (default and dev sections) and writes
+`env/.env.dev`, which is then consumed by Docker Compose via `env_file` so
+training-api and the refine pipeline receive consistent settings
+(`REDIS_URL`, `MODEL_ARTIFACTS_PATH`, `PROMOTE_TARGET_PATH`, `OLLAMA_URLS`,
+`OLLAMA_MODEL`, and `REFINER_*` values).
+
 Or via demo.sh:
 
 ```bash
