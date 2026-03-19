@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class JsonFormatter(logging.Formatter):
@@ -66,7 +66,7 @@ def make_trace_entry(
 
 class HandleRequest(BaseModel):
     request_id: str
-    text: str
+    text: str = Field(..., max_length=10000)
 
 
 class HandleResponse(BaseModel):

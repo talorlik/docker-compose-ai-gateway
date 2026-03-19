@@ -50,7 +50,7 @@ def test_merge_relabel_outputs_applies_last_suggestion(tmp_path):  # type: ignor
         encoding="utf-8",
     )
     (batches_dir / "proposed_relabels.batch_0001.csv").write_text(
-        "text,suggested_label,reason,confidence\nhello,ops,r,0.8\n",
+        "text,suggested_label,reason,confidence\nhello,ops,r,0.95\n",
         encoding="utf-8",
     )
 

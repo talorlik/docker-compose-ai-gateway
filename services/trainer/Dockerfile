@@ -1,5 +1,11 @@
 ARG PY_IMAGE=python:3.12-slim-bookworm
 FROM ${PY_IMAGE}
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN groupadd -r appuser && useradd -r -g appuser -d /train -s /sbin/nologin appuser
+
 WORKDIR /train
 
 COPY requirements.txt .
@@ -7,8 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY train.py .
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+RUN chown -R appuser:appuser /train
+
+USER appuser
 
 CMD ["python", "train.py", \
     "--data", "./train.csv", \

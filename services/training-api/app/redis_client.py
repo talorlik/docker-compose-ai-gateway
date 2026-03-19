@@ -7,17 +7,19 @@ job:refine:{id}), Pub/Sub channels (job:train:events:{id}, etc.), TTL 24h.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import threading
 from typing import Any, Iterator
 
-# Default TTL for job keys (24 hours)
+logger = logging.getLogger(__name__)
+
 JOB_STATE_TTL_SECONDS = 24 * 3600
 
 _client: Any = None
-# Separate connection for set/publish so the default connection can be used
-# for SUBSCRIBE in SSE handlers (a connection in subscribe mode cannot
-# execute PUBLISH or SET).
 _publish_client: Any = None
+_client_lock = threading.Lock()
+_publish_lock = threading.Lock()
 
 
 def _redis_url() -> str | None:
@@ -31,36 +33,38 @@ def _redis_url() -> str | None:
     return None
 
 
+def _make_redis_client():  # noqa: ANN201
+    url = _redis_url()
+    if not url:
+        raise RuntimeError(
+            "Redis not configured: set REDIS_URL or REDIS_HOST and REDIS_PORT"
+        )
+    import redis
+    return redis.from_url(url, decode_responses=True)
+
+
 def get_connection():  # noqa: ANN201
-    """Return a connected Redis client for reads and subscribe. Uses REDIS_URL or REDIS_HOST/REDIS_PORT."""
+    """Return a connected Redis client for reads and subscribe."""
     global _client
     if _client is not None:
         return _client
-    url = _redis_url()
-    if not url:
-        raise RuntimeError(
-            "Redis not configured: set REDIS_URL or REDIS_HOST and REDIS_PORT"
-        )
-    import redis
-    _client = redis.from_url(url, decode_responses=True)
-    return _client
+    with _client_lock:
+        if _client is not None:
+            return _client
+        _client = _make_redis_client()
+        return _client
 
 
 def get_publish_connection():  # noqa: ANN201
-    """Return a dedicated Redis connection for set/publish. Must be separate from
-    the connection used for SUBSCRIBE (subscribe mode cannot run PUBLISH/SET).
-    """
+    """Return a dedicated Redis connection for set/publish."""
     global _publish_client
     if _publish_client is not None:
         return _publish_client
-    url = _redis_url()
-    if not url:
-        raise RuntimeError(
-            "Redis not configured: set REDIS_URL or REDIS_HOST and REDIS_PORT"
-        )
-    import redis
-    _publish_client = redis.from_url(url, decode_responses=True)
-    return _publish_client
+    with _publish_lock:
+        if _publish_client is not None:
+            return _publish_client
+        _publish_client = _make_redis_client()
+        return _publish_client
 
 
 def set_job_state(key: str, payload: dict[str, Any], ttl: int = JOB_STATE_TTL_SECONDS) -> None:
@@ -75,7 +79,10 @@ def get_job_state(key: str) -> dict[str, Any] | None:
     raw = conn.get(key)
     if raw is None:
         return None
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
 
 
 def publish_job_event(channel: str, payload: dict[str, Any]) -> None:
@@ -85,13 +92,8 @@ def publish_job_event(channel: str, payload: dict[str, Any]) -> None:
 
 
 def publish_event(channel: str, payload: dict[str, Any]) -> None:
-    """Publish an event payload to an arbitrary channel.
-
-    Used for refinement lifecycle events and infrastructure status broadcasts
-    (e.g. Ollama availability).
-    """
-    conn = get_publish_connection()
-    conn.publish(channel, json.dumps(payload))
+    """Publish an event payload to an arbitrary channel."""
+    publish_job_event(channel, payload)
 
 
 def subscribe_to_job_channel(channel: str) -> Iterator[str]:
@@ -145,8 +147,10 @@ def stream_group_create(stream: str, group: str) -> None:
     try:
         conn.xgroup_create(name=stream, groupname=group, id="$", mkstream=True)
     except Exception as e:  # noqa: BLE001
-        # BUSYGROUP means it already exists.
-        if "BUSYGROUP" not in str(e):
+        import redis as _redis
+        if isinstance(e, _redis.ResponseError) and "BUSYGROUP" in str(e):
+            pass
+        else:
             raise
 
 
@@ -232,6 +236,7 @@ def stream_get_delivery_count(stream: str, group: str, entry_id: str) -> int | N
             count=1,
         )
     except Exception:  # noqa: BLE001
+        logger.debug("Failed to query pending entries for %s/%s", stream, entry_id, exc_info=True)
         return None
     if not pending:
         return None

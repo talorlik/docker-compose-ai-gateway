@@ -1,0 +1,38 @@
+[tool.pytest.ini_options]
+testpaths = [
+    "services/gateway/tests",
+    "services/ai_router/tests",
+    "services/search_service/tests",
+    "services/image_service/tests",
+    "services/ops_service/tests",
+    "services/trainer/tests",
+    "services/training-api/tests",
+    "compose/tests",
+    "tests",
+]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+markers = [
+    "unit: Unit tests (fast, no external deps)",
+    "integration: Integration tests (may need services running)",
+    "e2e: End-to-end tests (need full stack running)",
+]
+
+[tool.coverage.run]
+source = [
+    "services/gateway/app",
+    "services/ai_router/app",
+    "services/search_service/app",
+    "services/image_service/app",
+    "services/ops_service/app",
+    "services/trainer",
+    "services/training-api/app",
+]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+fail_under = 0

@@ -230,22 +230,31 @@ def merge_into_train(
     """Merge relabels (update) and examples (append) into train dataframe."""
     result = train_df.copy()
 
+    text_to_idx: dict[str, list[int]] = {}
+    for idx, val in enumerate(result["text"].astype(str).str.strip()):
+        text_to_idx.setdefault(val, []).append(idx)
+
     for r in relabels:
         text = str(r["text"]).strip()
         label = str(r["suggested_label"]).strip()
-        mask = result["text"].astype(str).str.strip() == text
-        result.loc[mask, "label"] = label
+        indices = text_to_idx.get(text, [])
+        if indices:
+            result.loc[indices, "label"] = label
 
     existing_texts = set(result["text"].astype(str).str.strip())
+    new_rows: list[dict] = []
     for ex in examples:
         text = str(ex.get("text", "")).strip()
         label = str(ex.get("label", "")).strip()
         if len(text) >= MIN_TEXT_LENGTH and text not in existing_texts:
-            result = pd.concat(
-                [result, pd.DataFrame([{"text": text, "label": label}])],
-                ignore_index=True,
-            )
+            new_rows.append({"text": text, "label": label})
             existing_texts.add(text)
+
+    if new_rows:
+        result = pd.concat(
+            [result, pd.DataFrame(new_rows)],
+            ignore_index=True,
+        )
 
     return result
 
@@ -310,7 +319,7 @@ def main() -> int:
             suggested = str(data.get("suggested_label", "")).strip()
             reason = str(data.get("reason", ""))
             confidence = float(data.get("confidence", 0.0))
-            if suggested not in ("search", "image", "ops", "unknown"):
+            if suggested not in LABELS:
                 rows_skipped += 1
                 continue
 
@@ -334,7 +343,7 @@ def main() -> int:
     existing_texts = set(train_df["text"].astype(str).str.strip())
     banned = _get_banned_patterns()
     for label in labels_to_augment:
-        if label not in ("search", "image", "ops", "unknown"):
+        if label not in LABELS:
             continue
         current_count = label_counts.get(label, 0)
         if current_count >= AUGMENT_SKIP_THRESHOLD:
@@ -388,7 +397,7 @@ def main() -> int:
     merged.to_csv(TRAIN_CANDIDATE_PATH, index=False)
 
     # Save metrics snapshot for promote script to compare
-    metrics_to_save = metrics or _load_metrics()
+    metrics_to_save = metrics
     if metrics_to_save:
         with open(METRICS_BEFORE_PATH, "w", encoding="utf-8") as f:
             json.dump(metrics_to_save, f, indent=2)

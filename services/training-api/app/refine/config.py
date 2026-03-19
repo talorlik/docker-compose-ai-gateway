@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+_SAFE_RUN_ID_RE = re.compile(r"^[a-f0-9\-]{36}$")
 
 
 def _get_int(name: str, default: int, *, min_value: int | None = None) -> int:
@@ -60,6 +63,13 @@ class RefineConfig:
     ollama_max_inflight_per_instance: int
     ollama_num_ctx: int
     ollama_num_predict: int
+    refiner_temperature: float
+    refiner_seed: int
+    structured_output_enabled: bool
+
+    # Relabel gating: only apply suggested label changes when the LLM is
+    # sufficiently confident that the existing (base/true) label is wrong.
+    relabel_min_confidence: float
 
     # Redis Streams (work queues) and events
     relabel_tasks_stream: str
@@ -101,6 +111,21 @@ class RefineConfig:
             # defaults so the refiner stays responsive on CPU-only machines.
             ollama_num_ctx=_get_int("OLLAMA_NUM_CTX", 2048, min_value=128),
             ollama_num_predict=_get_int("OLLAMA_NUM_PREDICT", 256, min_value=16),
+            refiner_temperature=_get_float("REFINER_TEMPERATURE", 0.1, min_value=0.0),
+            refiner_seed=_get_int("REFINER_SEED", 42),
+            relabel_min_confidence=min(
+                1.0,
+                max(
+                    0.0,
+                    _get_float(
+                        "REFINER_RELABEL_MIN_CONFIDENCE", 0.85, min_value=0.0
+                    ),
+                ),
+            ),
+            structured_output_enabled=_get_str(
+                "REFINER_STRUCTURED_OUTPUT_ENABLED", "true"
+            ).lower()
+            in {"1", "true", "yes", "on"},
             relabel_tasks_stream=_get_str("REFINE_RELABEL_TASKS_STREAM", "refine:relabel:tasks"),
             augment_tasks_stream=_get_str("REFINE_AUGMENT_TASKS_STREAM", "refine:augment:tasks"),
             relabel_consumer_group=_get_str("REFINE_RELABEL_CONSUMER_GROUP", "relabel-workers"),
@@ -111,7 +136,15 @@ class RefineConfig:
     def new_run_id(self) -> str:
         return str(uuid.uuid4())
 
+    @staticmethod
+    def validate_run_id(run_id: str) -> str:
+        """Validate run_id to prevent path traversal."""
+        if not _SAFE_RUN_ID_RE.match(run_id):
+            raise ValueError(f"Invalid run_id format: {run_id!r}")
+        return run_id
+
     def run_dir(self, run_id: str) -> Path:
+        self.validate_run_id(run_id)
         return self.runs_root / run_id
 
     def events_channel(self, run_id: str) -> str:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,12 +28,61 @@ from app.refine.training import train_candidate
 
 
 def _parse_json_response(raw: str) -> list[dict[str, Any]] | None:
+    """Parse Ollama output into a JSON array of relabel rows.
+
+    In practice, models sometimes wrap JSON in markdown code fences or return
+    a JSON object that contains the array. This parser is intentionally
+    forgiving so relabeling can proceed.
+    """
     text = (raw or "").strip()
+
+    # Strip common markdown code fences: ```json ... ```
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    if match:
+        text = match.group(1).strip()
+
+    def _coerce_to_list(data: object) -> list[dict[str, Any]] | None:
+        if isinstance(data, list):
+            return [r for r in data if isinstance(r, dict)]
+        if isinstance(data, dict):
+            # Sometimes models return a single object instead of an array.
+            if (
+                "text" in data
+                and "suggested_label" in data
+                and "reason" in data
+                and "confidence" in data
+            ):
+                return [data]  # type: ignore[list-item]
+            # Accept a few likely wrapper keys.
+            for key in ("relabels", "items", "data", "results", "proposed_relabels"):
+                v = data.get(key)
+                if isinstance(v, list):
+                    return [r for r in v if isinstance(r, dict)]
+        return None
+
+    # 1) Try parsing the whole thing.
     try:
         data = json.loads(text)
+        parsed = _coerce_to_list(data)
+        if parsed is not None:
+            return parsed
     except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, list) else None
+        pass
+
+    # 2) If there is extra text, attempt to extract the first JSON array.
+    start = text.find("[")
+    end = text.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        candidate = text[start : end + 1]
+        try:
+            data = json.loads(candidate)
+            parsed = _coerce_to_list(data)
+            if parsed is not None:
+                return parsed
+        except json.JSONDecodeError:
+            return None
+
+    return None
 
 
 @dataclass(frozen=True)
@@ -98,6 +148,18 @@ def _write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) ->
             w.writerow({k: r.get(k, "") for k in fieldnames})
 
 
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content or "")
+
+
 def _read_csv_rows(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -128,23 +190,78 @@ def _batch_output_path(cfg: RefineConfig, run_id: str, batch_id: str) -> Path:
     return cfg.relabel_dir(run_id) / "batches" / f"proposed_relabels.batch_{batch_id}.csv"
 
 
-def _handle_task(
+def _batch_raw_output_path(cfg: RefineConfig, run_id: str, batch_id: str) -> Path:
+    return cfg.relabel_dir(run_id) / "batches" / f"raw_proposed_relabels.batch_{batch_id}.txt"
+
+
+def _batch_prompt_output_path(cfg: RefineConfig, run_id: str, batch_id: str) -> Path:
+    return cfg.relabel_dir(run_id) / "batches" / f"prompt_relabel.batch_{batch_id}.txt"
+
+
+def _batch_validation_output_path(
+    cfg: RefineConfig, run_id: str, batch_id: str
+) -> Path:
+    return (
+        cfg.relabel_dir(run_id)
+        / "batches"
+        / f"proposed_relabels.batch_{batch_id}.validation.json"
+    )
+
+
+def _batch_rejected_output_path(cfg: RefineConfig, run_id: str, batch_id: str) -> Path:
+    return (
+        cfg.relabel_dir(run_id)
+        / "batches"
+        / f"proposed_relabels.batch_{batch_id}.rejected_items.csv"
+    )
+
+
+def _handle_task_etl(
     *,
     cfg: RefineConfig,
     pool: OllamaPool,
     task: RelabelTask,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     _ = cfg  # reserved for future cfg-driven prompt options
+    expected_count = int(len(task.rows))
     prompt = relabel_misclassified_batch(task.rows)
     raw = pool.generate(prompt=prompt, system=SYSTEM_INSTRUCTIONS)
     parsed = _parse_json_response(raw)
+
+    validation: dict[str, Any] = {
+        "input_rows_count": expected_count,
+        "expected_items_count": expected_count,
+        "parsed_items_count": int(len(parsed)) if parsed is not None else 0,
+        "accepted_items_count": 0,
+        "rejected_items_count": 0,
+        "error_code": None,
+        "rejected_items": [],
+    }
+
     if parsed is None:
-        raise ValueError("Invalid JSON array from Ollama")
+        validation["error_code"] = "INVALID_JSON_ARRAY"
+        validation["error_message"] = "Invalid JSON array from Ollama"
+        return {
+            "raw": raw,
+            "prompt": prompt,
+            "accepted": [],
+            "validation": validation,
+            "error": "Invalid JSON array from Ollama",
+        }
+
+    used_fallback = False
+    initial_parsed_count = len(parsed)
 
     out: list[dict[str, Any]] = []
-    for item in parsed:
+    rejected: list[dict[str, Any]] = []
+
+    def _process_item(idx: int, item: Any) -> None:
         if not isinstance(item, dict):
-            continue
+            rejected.append(
+                {"idx": idx, "error_code": "INVALID_ITEM_TYPE", "raw_item": item}
+            )
+            return
+
         text = str(item.get("text") or "").strip()
         suggested = str(item.get("suggested_label") or "").strip()
         reason = str(item.get("reason") or "").strip()
@@ -152,10 +269,34 @@ def _handle_task(
             conf = float(item.get("confidence") or 0.0)
         except (TypeError, ValueError):
             conf = 0.0
+
+        # Preserve current acceptance semantics exactly: first validate label,
+        # then validate non-empty text.
         if suggested not in LABELS:
-            continue
+            rejected.append(
+                {
+                    "idx": idx,
+                    "error_code": "BAD_SUGGESTED_LABEL",
+                    "text": text,
+                    "suggested_label": suggested,
+                    "reason": reason,
+                    "confidence": conf,
+                }
+            )
+            return
         if not text:
-            continue
+            rejected.append(
+                {
+                    "idx": idx,
+                    "error_code": "EMPTY_TEXT",
+                    "text": text,
+                    "suggested_label": suggested,
+                    "reason": reason,
+                    "confidence": conf,
+                }
+            )
+            return
+
         out.append(
             {
                 "text": text,
@@ -164,7 +305,90 @@ def _handle_task(
                 "confidence": conf,
             }
         )
-    return out
+
+    # Correlation rule: batch size determines number of raw results we
+    # accumulate. If the model returns fewer than requested, fall back to
+    # per-row calls to get one object per input row.
+    if len(parsed) != expected_count:
+        used_fallback = True
+        validation["initial_parsed_items_count"] = initial_parsed_count
+        validation["error_code"] = "PARTIAL_OUTPUT"
+        validation["error_message"] = (
+            f"Expected {expected_count} relabel objects, got {len(parsed)}"
+        )
+
+        raw_parts: list[str] = [f"--- initial batch ---\n{raw}"]
+        prompt_parts: list[str] = [f"--- initial batch ---\n{prompt}"]
+
+        for idx, row in enumerate(task.rows):
+            row_prompt = relabel_misclassified_batch([row])
+            row_raw = pool.generate(prompt=row_prompt, system=SYSTEM_INSTRUCTIONS)
+            row_parsed = _parse_json_response(row_raw)
+            raw_parts.append(f"--- row {idx} ---\n{row_raw}")
+            prompt_parts.append(f"--- row {idx} ---\n{row_prompt}")
+
+            if row_parsed is None:
+                validation["error_code"] = "INVALID_JSON_ARRAY_ROW"
+                validation["error_message"] = f"Row {idx}: invalid JSON"
+                return {
+                    "raw": "\n".join(raw_parts),
+                    "prompt": "\n".join(prompt_parts),
+                    "accepted": [],
+                    "validation": validation,
+                    "error": validation["error_message"],
+                }
+            if len(row_parsed) != 1:
+                validation["error_code"] = "PARTIAL_OUTPUT_ROW"
+                validation["error_message"] = (
+                    f"Row {idx}: expected 1 relabel object, got {len(row_parsed)}"
+                )
+                return {
+                    "raw": "\n".join(raw_parts),
+                    "prompt": "\n".join(prompt_parts),
+                    "accepted": [],
+                    "validation": validation,
+                    "error": validation["error_message"],
+                }
+
+            _process_item(idx, row_parsed[0])
+
+        # We successfully accumulated one output per input row (even if some
+        # were rejected due to label/text validation).
+        validation["parsed_items_count"] = expected_count
+        validation["error_code"] = None
+        validation["error_message"] = None
+        raw = "\n".join(raw_parts)
+        prompt = "\n".join(prompt_parts)
+    else:
+        for idx, item in enumerate(parsed):
+            _process_item(idx, item)
+
+    validation["used_fallback_per_row"] = used_fallback
+
+    validation["accepted_items_count"] = int(len(out))
+    validation["rejected_items_count"] = int(len(rejected))
+    validation["rejected_items"] = rejected
+
+    return {
+        "raw": raw,
+        "prompt": prompt,
+        "accepted": out,
+        "validation": validation,
+        "error": None,
+    }
+
+
+def _handle_task(
+    *,
+    cfg: RefineConfig,
+    pool: OllamaPool,
+    task: RelabelTask,
+) -> list[dict[str, Any]]:
+    """Test/compat helper: return accepted proposals or raise on invalid output."""
+    etl = _handle_task_etl(cfg=cfg, pool=pool, task=task)
+    if etl.get("error"):
+        raise ValueError(str(etl["error"]))
+    return etl["accepted"]
 
 
 def run_relabel_workers(
@@ -185,6 +409,9 @@ def run_relabel_workers(
             max_inflight_per_instance=cfg.ollama_max_inflight_per_instance,
             num_ctx=cfg.ollama_num_ctx,
             num_predict=cfg.ollama_num_predict,
+            temperature=cfg.refiner_temperature,
+            seed=cfg.refiner_seed,
+            structured_output_enabled=cfg.structured_output_enabled,
         )
 
     pool = get_ollama_pool(_mk_pool)
@@ -230,11 +457,45 @@ def run_relabel_workers(
                 rows_raw = fields.get("rows") or "[]"
                 rows = json.loads(rows_raw) if isinstance(rows_raw, str) else []
                 task = RelabelTask(run_id=run_id, batch_id=str(batch_id), rows=rows)
-                proposed = _handle_task(cfg=cfg, pool=pool, task=task)
+
+                etl = _handle_task_etl(cfg=cfg, pool=pool, task=task)
+
+                _write_text(
+                    _batch_raw_output_path(cfg, run_id, task.batch_id),
+                    etl["raw"],
+                )
+                _write_text(
+                    _batch_prompt_output_path(cfg, run_id, task.batch_id),
+                    etl["prompt"],
+                )
+                _write_json(
+                    _batch_validation_output_path(cfg, run_id, task.batch_id),
+                    etl["validation"],
+                )
+                rejected = etl["validation"].get("rejected_items") or []
+                if rejected:
+                    _write_csv(
+                        _batch_rejected_output_path(cfg, run_id, task.batch_id),
+                        rejected,
+                        fieldnames=[
+                            "idx",
+                            "error_code",
+                            "text",
+                            "suggested_label",
+                            "reason",
+                            "confidence",
+                        ],
+                    )
+
+                if etl.get("error"):
+                    # Preserve legacy behavior: treat invalid JSON as a failed task
+                    # so it can be retried. Artifacts are still written above.
+                    raise ValueError(str(etl["error"]))
+
                 out_path = _batch_output_path(cfg, run_id, task.batch_id)
                 _write_csv(
                     out_path,
-                    proposed,
+                    etl["accepted"],
                     fieldnames=["text", "suggested_label", "reason", "confidence"],
                 )
                 stream_ack(cfg.relabel_tasks_stream, group, entry_id)
@@ -289,24 +550,94 @@ def merge_relabel_outputs(
     run_id: str,
     train_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    batches_dir = cfg.relabel_dir(run_id) / "batches"
-    if not batches_dir.exists():
-        return train_df
+    relabel_dir = cfg.relabel_dir(run_id)
+    relabel_dir.mkdir(parents=True, exist_ok=True)
+    batches_dir = relabel_dir / "batches"
+
     relabel_rows: list[dict[str, Any]] = []
-    for p in sorted(batches_dir.glob("proposed_relabels.batch_*.csv")):
-        with open(p, encoding="utf-8", newline="") as f:
-            relabel_rows.extend(list(csv.DictReader(f)))
+    if batches_dir.exists():
+        for p in sorted(batches_dir.glob("proposed_relabels.batch_*.csv")):
+            with open(p, encoding="utf-8", newline="") as f:
+                relabel_rows.extend(list(csv.DictReader(f)))
 
     # Filter: valid labels, non-empty text, keep last suggestion per text
     latest: dict[str, dict[str, Any]] = {}
+    rejected_count = 0
+    overwrite_count = 0
     for r in relabel_rows:
         text = str(r.get("text") or "").strip()
         suggested = str(r.get("suggested_label") or "").strip()
         if not text or suggested not in LABELS:
+            rejected_count += 1
             continue
+        if text in latest:
+            overwrite_count += 1
         latest[text] = r
 
     merged_rows = list(latest.values())
+
+    # Confidence gating: only apply label changes when the LLM both
+    # suggests a different label than the existing base/true label and
+    # is sufficiently confident.
+    base_by_text: dict[str, str] = {
+        str(t).strip(): str(l).strip()
+        for t, l in zip(
+            train_df["text"].astype(str).str.strip(),
+            train_df["label"].astype(str).str.strip(),
+        )
+    }
+
+    min_conf = float(getattr(cfg, "relabel_min_confidence", 0.85))
+    applied_count = 0
+    skipped_same_as_base = 0
+    skipped_low_confidence = 0
+    skipped_invalid_confidence = 0
+
+    proposed_map: dict[str, str] = {}
+    for r in merged_rows:
+        text = str(r.get("text") or "").strip()
+        if text not in base_by_text:
+            continue
+        suggested = str(r.get("suggested_label") or "").strip()
+        base_label = base_by_text[text]
+
+        # Parse confidence for gating.
+        try:
+            conf = float(r.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            conf = -1.0
+
+        if suggested == base_label:
+            skipped_same_as_base += 1
+            continue
+
+        if conf < 0.0:
+            skipped_invalid_confidence += 1
+            continue
+
+        if conf < min_conf:
+            skipped_low_confidence += 1
+            continue
+
+        proposed_map[text] = suggested
+        applied_count += 1
+
+    _write_json(
+        relabel_dir / "merge_relabel.validation.json",
+        {
+            "input_rows_count": int(len(relabel_rows)),
+            "accepted_rows_count": int(len(merged_rows)),
+            "rejected_rows_count": int(rejected_count),
+            "overwrites_kept_last_count": int(overwrite_count),
+            "min_confidence": float(min_conf),
+            "proposed_rows_total": int(len(merged_rows)),
+            "applied_rows_count": int(applied_count),
+            "skipped_same_as_base_count": int(skipped_same_as_base),
+            "skipped_low_confidence_count": int(skipped_low_confidence),
+            "skipped_invalid_confidence_count": int(skipped_invalid_confidence),
+        },
+    )
+
     _write_csv(
         cfg.relabel_merged_csv(run_id),
         merged_rows,
@@ -314,10 +645,8 @@ def merge_relabel_outputs(
     )
 
     result = train_df.copy()
-    proposed_map = {str(r["text"]).strip(): str(r["suggested_label"]).strip() for r in merged_rows}
     mask = result["text"].astype(str).str.strip().isin(proposed_map.keys())
     result.loc[mask, "label"] = result.loc[mask, "text"].astype(str).str.strip().map(proposed_map)
-    cfg.relabel_dir(run_id).mkdir(parents=True, exist_ok=True)
     result.to_csv(cfg.relabel_candidate_csv(run_id), index=False)
     return result
 

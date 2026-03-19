@@ -13,21 +13,52 @@ default:
   # Redis
   REDIS_URL: redis://redis:6379/0
 
+  # Ollama backend mode
+  OLLAMA_MODE: native
+  OLLAMA_BACKEND_ENFORCE_EXCLUSIVE: "true"
+  OLLAMA_CONTAINER_SERVICE: ollama
+
   # Ollama / refiner defaults
   OLLAMA_MODEL: phi3:mini
-  OLLAMA_URLS: http://ollama_1:11434,http://ollama_2:11434,http://ollama_3:11434
-  OLLAMA_HOST: http://ollama_1:11434
+  OLLAMA_URLS: http://host.docker.internal:11434
+  OLLAMA_HOST: http://host.docker.internal:11434
   OLLAMA_TIMEOUT_SECONDS: "300"
-  OLLAMA_MAX_INFLIGHT_PER_INSTANCE: "2"
-  OLLAMA_NUM_CTX: "2048"
-  OLLAMA_NUM_PREDICT: "256"
+  OLLAMA_MAX_INFLIGHT_PER_INSTANCE: "1"
+  OLLAMA_MAX_LOADED_MODELS: "1"
+  OLLAMA_NUM_PARALLEL: "1"
+  OLLAMA_MAX_QUEUE: "512"
+  OLLAMA_KEEP_ALIVE: "30m"
+  OLLAMA_NUM_CTX: "1024"
+  OLLAMA_NUM_PREDICT: "120"
+  OLLAMA_FLASH_ATTENTION: "0"
+  OLLAMA_KV_CACHE_TYPE: "f16"
+
+  # Per-phase refiner generation controls
+  REFINER_RELABEL_NUM_CTX: "1024"
+  REFINER_RELABEL_NUM_PREDICT: "120"
+  REFINER_AUGMENT_NUM_CTX: "768"
+  REFINER_AUGMENT_NUM_PREDICT: "180"
+  REFINER_TEMPERATURE: "0.1"
+  REFINER_SEED: "42"
+  REFINER_STRUCTURED_OUTPUT_ENABLED: "true"
 
   # Refiner limits and batching
   REFINER_RELABEL_BATCH_SIZE: "25"
-  REFINER_RELABEL_MAX_PARALLEL_BATCHES: "4"
+  REFINER_RELABEL_MAX_PARALLEL_BATCHES: "1"
   REFINER_AUGMENT_N_PER_LABEL: "3"
-  REFINER_AUGMENT_MAX_PARALLEL_LABELS: "4"
+  REFINER_AUGMENT_MAX_PARALLEL_LABELS: "1"
+  REFINER_RELABEL_MAX_RETRIES: "3"
+  REFINER_AUGMENT_MAX_RETRIES: "3"
   REFINER_LIMIT: "5"
+
+  # Demo orchestration and benchmark controls
+  DEMO_START_BACKEND: "true"
+  DEMO_RUN_RELABEL: "true"
+  DEMO_RUN_AUGMENT: "true"
+  BENCH_PROFILE: mac_performance
+  BENCH_EXPERIMENT_ID: baseline
+  BENCH_METRICS_INTERVAL_SEC: "5"
+  BENCH_MAX_RETRIES: "3"
 
 dev:
   # Development-specific overrides (can be extended as needed)
@@ -36,3 +67,7 @@ dev:
 prod:
   # Production overrides go here (example only; adjust for your deployment)
   LOG_LEVEL: info
+  OLLAMA_MODE: container
+  OLLAMA_HOST: http://ollama:11434
+  OLLAMA_URLS: http://ollama:11434
+  BENCH_PROFILE: portable_default

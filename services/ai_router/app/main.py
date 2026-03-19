@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -13,7 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import joblib
 import numpy as np
 from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 BUILD_MODEL_PATH = "/app/model/model.joblib"
 
@@ -37,10 +39,10 @@ def setup_logging(service_name: str, level: str = "INFO") -> logging.Logger:
     """Configure JSON logging for request correlation (TECH-20.1)."""
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
-    logger = logging.getLogger(service_name)
-    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
-    logger.addHandler(handler)
-    return logger
+    _logger = logging.getLogger(service_name)
+    _logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    _logger.addHandler(handler)
+    return _logger
 
 
 logger = setup_logging("ai-router", os.getenv("LOG_LEVEL", "INFO"))
@@ -64,13 +66,11 @@ def top_contributing_tokens(
     text: str,
     vectorizer,
     model,
-    labels: List[str],
+    labels: List[str],  # noqa: ARG001
     top_n: int = 6,
 ) -> Tuple[str, float, Dict[str, float], List[str]]:
     X = vectorizer.transform([text])
 
-    # predict_proba ordering follows model.classes_ (alphabetical),
-    # not our custom label list; use model.classes_ for alignment.
     classes = list(model.classes_)
     probs = model.predict_proba(X)[0]
     pred_idx = int(np.argmax(probs))
@@ -79,6 +79,10 @@ def top_contributing_tokens(
     probs_map = {classes[i]: float(probs[i]) for i in range(len(classes))}
 
     feature_names = vectorizer.get_feature_names_out()
+
+    if not hasattr(model, "coef_"):
+        return pred_label, confidence, probs_map, []
+
     class_coef = model.coef_[pred_idx]
 
     indices = X.indices
@@ -119,7 +123,7 @@ def make_trace_entry(
 
 class ClassifyRequest(BaseModel):
     request_id: str
-    text: str
+    text: str = Field(..., max_length=10000)
 
 
 class ClassifyResponse(BaseModel):
@@ -137,6 +141,7 @@ async def lifespan(application: FastAPI):
     application.state.vectorizer = vec
     application.state.model = mdl
     application.state.labels = labels
+    application.state.model_loaded = True
     yield
 
 
@@ -145,7 +150,9 @@ app = FastAPI(title="AI Router", version="0.1.0", lifespan=lifespan)
 
 @app.get("/health")
 async def health():
-    """Health check for Compose/load balancers."""
+    """Health check - verifies model is loaded."""
+    if not getattr(app.state, "model_loaded", False):
+        return {"status": "not_ready"}
     return {"status": "ok"}
 
 
@@ -155,13 +162,21 @@ async def classify(req: ClassifyRequest):
         "classify request",
         extra={"request_id": req.request_id},
     )
-    pred_label, confidence, probs_map, tokens = top_contributing_tokens(
-        req.text,
-        app.state.vectorizer,
-        app.state.model,
-        app.state.labels,
-        top_n=6,
-    )
+    try:
+        pred_label, confidence, probs_map, tokens = await asyncio.to_thread(
+            top_contributing_tokens,
+            req.text,
+            app.state.vectorizer,
+            app.state.model,
+            app.state.labels,
+            6,
+        )
+    except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
+        logger.error("Inference error: %s", exc, extra={"request_id": req.request_id})
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Classification inference failed"},
+        )
 
     explanation = f"top tokens: {', '.join(tokens)}" if tokens else ""
 

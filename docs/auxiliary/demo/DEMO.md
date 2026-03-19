@@ -1,511 +1,337 @@
-# Demo Runbook
+# Demo Guide
 
-Runbook for the Local AI Microservice Mesh: command-line and bash script
-usage first, with clear instructions for using the frontend. Per PROJECT_PLAN
-Section 10 and NFR-034.
+This guide covers native and containerized Ollama workflows, configuration
+management, and the demo scripts for train/relabel/augment/promote.
 
-**Prerequisites:** Docker and Docker Compose. Run all commands from the
-project root unless noted.
+## Table Of Contents
 
-## Quick Reference (Scripts)
+- [Runtime Modes](#runtime-modes)
+- [Native Ollama Setup (macOS)](#native-ollama-setup-macos)
+- [Native Ollama Setup (Ubuntu)](#native-ollama-setup-ubuntu)
+- [Configuration Reference](#configuration-reference)
+- [Running The Demo](#running-the-demo)
+- [Demo Prompt Examples](#demo-prompt-examples)
+- [Using The Frontend](#using-the-frontend)
+- [Troubleshooting](#troubleshooting)
+- [See Also](#see-also)
 
-| Action | Command |
-| --- | --- |
-| Build | `./scripts/demo.sh build` |
-| Start stack | `./scripts/demo.sh run` |
-| Start with Train/Refine UI | `docker compose -f compose/docker-compose.yaml --profile refine up -d` |
-| Stop | `./scripts/demo.sh stop` |
-| Delete (containers + volumes) | `./scripts/demo.sh delete` |
-| Curl demos | `./scripts/demo.sh curl` |
-| Scaling demo | `./scripts/demo.sh scaling` |
-| Failure demo | `./scripts/demo.sh failure` |
-| Load test | `./scripts/demo.sh load-test` |
-| Logs | `./scripts/demo.sh logs` |
-| Unit tests | `./scripts/demo.sh test` |
-| Train model | `./scripts/demo.sh train` |
-| Refine dataset (relabel + augment) | `./scripts/demo.sh refine` (option: `--limit 5`) |
-| Promote candidate | `./scripts/demo.sh promote` (CLI) or `./scripts/promote.sh` |
+## Runtime Modes
 
-## Part I: Command-Line and Script Runbook
+Exactly one Ollama backend mode must be active:
 
-### 1. Build
+- `OLLAMA_MODE=native`
+  - Use host-native Ollama.
+  - Containerized Ollama must not run.
+- `OLLAMA_MODE=container`
+  - Use Compose-managed `ollama` service.
+  - Host-native endpoint must not be used by the services.
+
+`scripts/demo.sh` enforces this when
+`OLLAMA_BACKEND_ENFORCE_EXCLUSIVE=true`.
+
+## Native Ollama Setup (macOS)
+
+### Prerequisites
+
+- macOS on Apple Silicon (recommended for this project).
+- Docker Desktop and Docker Compose.
+
+### Install
+
+1. Install Ollama from [Ollama Download](https://ollama.com/download).
+2. Start Ollama once from Applications.
+3. Verify:
+
+```bash
+ollama --version
+ollama list
+```
+
+### Pull Model
+
+```bash
+ollama pull phi3:mini
+```
+
+### Smoke Test
+
+```bash
+curl -s http://localhost:11434/api/tags | python3 -m json.tool
+```
+
+### Use Native Mode In This Project
+
+Set in `config/PROJECT_CONFIG.yaml` (or `env/.env.<env>`):
+
+- `OLLAMA_MODE=native`
+- `OLLAMA_HOST=http://host.docker.internal:11434`
+- `OLLAMA_BACKEND_ENFORCE_EXCLUSIVE=true`
+
+Then run:
+
+```bash
+CONFIG_ENV=dev ./scripts/demo.sh run
+```
+
+## Native Ollama Setup (Ubuntu)
+
+### Prerequisites
+
+- Ubuntu 22.04+.
+- Docker and Docker Compose plugin.
+
+### Install
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+Start service and enable at boot:
+
+```bash
+sudo systemctl enable ollama
+sudo systemctl start ollama
+```
+
+Verify:
+
+```bash
+ollama --version
+curl -s http://localhost:11434/api/tags | python3 -m json.tool
+```
+
+### Pull Model
+
+```bash
+ollama pull phi3:mini
+```
+
+### Use Native Mode In This Project
+
+Set:
+
+- `OLLAMA_MODE=native`
+- `OLLAMA_HOST=http://host.docker.internal:11434` (Docker Desktop or host bridge)
+
+If your host networking differs, set `OLLAMA_HOST` to the reachable host address.
+
+## Configuration Reference
+
+All values are defined in `config/PROJECT_CONFIG.yaml` and rendered to
+`env/.env.<env>` by `scripts/generate_env.py`.
+
+> [!NOTE]
+> Use `CONFIG_ENV=dev` (or `prod`) with `scripts/demo.sh` to select env.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `OLLAMA_MODE` | `native` | Backend mode (`native` or `container`) |
+| `OLLAMA_BACKEND_ENFORCE_EXCLUSIVE` | `true` | Fail if both backends are active |
+| `OLLAMA_CONTAINER_SERVICE` | `ollama` | Compose service name for container backend |
+| `OLLAMA_HOST` | `http://host.docker.internal:11434` | Active endpoint used by services |
+| `OLLAMA_MODEL` | `phi3:mini` | Model tag used by refiner/training-api |
+| `OLLAMA_URLS` | one URL | Comma list for pool (single URL recommended) |
+| `OLLAMA_TIMEOUT_SECONDS` | `300` | Request timeout to Ollama |
+| `OLLAMA_MAX_INFLIGHT_PER_INSTANCE` | `1` | Inflight cap per backend instance |
+| `OLLAMA_MAX_LOADED_MODELS` | `1` | Max loaded models for container Ollama |
+| `OLLAMA_NUM_PARALLEL` | `1` | Parallel requests per loaded model |
+| `OLLAMA_MAX_QUEUE` | `512` | Queue limit before overload |
+| `OLLAMA_KEEP_ALIVE` | `30m` | Keep model in memory between requests |
+| `OLLAMA_FLASH_ATTENTION` | `0` | Optional memory/throughput experiment |
+| `OLLAMA_KV_CACHE_TYPE` | `f16` | KV cache precision (`q8_0`, `q4_0`, etc.) |
+| `REFINER_RELABEL_NUM_CTX` | `1024` | Relabel context budget |
+| `REFINER_AUGMENT_NUM_CTX` | `768` | Augment context budget |
+| `REFINER_RELABEL_NUM_PREDICT` | `120` | Relabel output token cap |
+| `REFINER_AUGMENT_NUM_PREDICT` | `180` | Augment output token cap |
+| `REFINER_TEMPERATURE` | `0.1` | Generation determinism |
+| `REFINER_SEED` | `42` | Reproducibility seed |
+| `REFINER_STRUCTURED_OUTPUT_ENABLED` | `true` | Force structured JSON output |
+| `REFINER_RELABEL_BATCH_SIZE` | `25` | Relabel batch size |
+| `REFINER_RELABEL_MAX_PARALLEL_BATCHES` | `1` | Relabel worker parallelism |
+| `REFINER_AUGMENT_N_PER_LABEL` | `3` | Aug examples per selected label |
+| `REFINER_AUGMENT_MAX_PARALLEL_LABELS` | `1` | Augment label parallelism |
+| `REFINER_LIMIT` | `5` | Max misclassified rows for relabel phase |
+| `DEMO_START_BACKEND` | `true` | Let `demo.sh` start selected backend |
+| `DEMO_RUN_RELABEL` | `true` | Enable relabel phase in `demo.sh refine` |
+| `DEMO_RUN_AUGMENT` | `true` | Enable augment phase in `demo.sh refine` |
+| `BENCH_PROFILE` | `mac_performance` | Benchmark profile label |
+| `BENCH_EXPERIMENT_ID` | `baseline` | Benchmark experiment id |
+| `BENCH_METRICS_INTERVAL_SEC` | `5` | Metrics sampling cadence |
+| `BENCH_MAX_RETRIES` | `3` | Retry cap during benchmark runs |
+
+### Cross References
+
+- Configuration architecture:
+  [CONFIGURATION.md](../architecture/CONFIGURATION.md)
+- Refiner flow:
+  [REFINER_FLOW.md](../refiner/REFINER_FLOW.md)
+- Performance plan:
+  [PERFORMANCE_IMPROVEMENTS.md](../planning/PERFORMANCE_IMPROVEMENTS.md)
+
+## Running The Demo
+
+### Build
 
 ```bash
 ./scripts/demo.sh build
 ```
 
-Build a single service:
-
-```bash
-./scripts/demo.sh build gateway
-```
-
-Without script (raw Compose):
-
-```bash
-docker compose -f compose/docker-compose.yaml build
-```
-
-### 2. Run the Stack
-
-**Production (default profile):**
+### Start Stack
 
 ```bash
 ./scripts/demo.sh run
 ```
 
-**With hot reload (dev overlay):**
+### Start With Dev Overlay
 
 ```bash
 ./scripts/demo.sh run --dev
 ```
 
-**With search_service scaled to 3:**
-
-```bash
-./scripts/demo.sh run --scale 3
-```
-
-**With Train and Refine UI (Redis + training-api):**
-
-Start the stack including the refine profile so the frontend Train/Refine
-tabs work:
-
-```bash
-docker compose -f compose/docker-compose.yaml --profile refine up -d
-```
-
-Wait for health (~10s). Gateway: <http://localhost:8000>. For Refine tab,
-Ollama must be running (e.g. start Ollama first or use the same command;
-Ollama is in the refine profile).
-
-**Without script:**
-
-```bash
-docker compose -f compose/docker-compose.yaml up --build -d
-```
-
-### 3. Stop
-
-```bash
-./scripts/demo.sh stop
-```
-
-Without script:
-
-```bash
-docker compose -f compose/docker-compose.yaml stop
-```
-
-### 4. Delete Everything
-
-Removes containers, networks, and volumes.
-
-```bash
-./scripts/demo.sh delete
-```
-
-Without script:
-
-```bash
-docker compose -f compose/docker-compose.yaml down -v
-```
-
-### 5. Curl Demos (API)
-
-Ensure the stack is running. Base URL: `http://localhost:8000` (or set
-`GATEWAY_URL`).
-
-**Run all curl examples (search, image, ops, unknown):**
-
-```bash
-./scripts/demo.sh curl
-```
-
-**Manual curl examples:**
-
-Health:
-
-```bash
-curl http://localhost:8000/health
-```
-
-List routes:
-
-```bash
-curl http://localhost:8000/routes
-```
-
-Search (route: search):
-
-```bash
-curl -X POST http://localhost:8000/api/request \
-  -H "Content-Type: application/json" \
-  -d '{"text": "compare nginx ingress vs traefik"}'
-```
-
-Image (route: image):
-
-```bash
-curl -X POST http://localhost:8000/api/request \
-  -H "Content-Type: application/json" \
-  -d '{"text": "detect objects in an image and return labels"}'
-```
-
-Ops (route: ops):
-
-```bash
-curl -X POST http://localhost:8000/api/request \
-  -H "Content-Type: application/json" \
-  -d '{"text": "kubectl pods CrashLoopBackOff, debug steps"}'
-```
-
-Unknown (404):
-
-```bash
-curl -X POST http://localhost:8000/api/request \
-  -H "Content-Type: application/json" \
-  -d '{"text": "hello"}'
-```
-
-Pretty-print response:
-
-```bash
-curl -s -X POST http://localhost:8000/api/request \
-  -H "Content-Type: application/json" \
-  -d '{"text": "compare nginx ingress vs traefik"}' | python3 -m json.tool
-```
-
-### 6. Logs
-
-**Follow gateway, ai_router, search_service:**
-
-```bash
-./scripts/demo.sh logs
-```
-
-**Follow a specific service:**
-
-```bash
-./scripts/demo.sh logs gateway
-```
-
-Without script:
-
-```bash
-docker compose -f compose/docker-compose.yaml logs -f gateway ai_router search_service
-```
-
-### 7. Scaling Demo
-
-Scale search_service to 3, run load test, then scale back:
-
-```bash
-./scripts/demo.sh scaling
-```
-
-Scale back to 1:
-
-```bash
-./scripts/demo.sh scale 1
-```
-
-Load test only (default 20 requests):
-
-```bash
-./scripts/demo.sh load-test
-```
-
-### 8. Failure Demo
-
-Stop image_service, send a request (expect 502), then restart:
-
-```bash
-./scripts/demo.sh failure
-```
-
-Restart image_service:
-
-```bash
-docker compose -f compose/docker-compose.yaml start image_service
-```
-
-### 9. Unit Tests
-
-**All (gateway + ai_router):**
-
-```bash
-./scripts/demo.sh test
-```
-
-**Gateway only:**
-
-```bash
-./scripts/demo.sh test gateway
-```
-
-Without script:
-
-```bash
-pytest services/gateway/tests/ services/ai_router/tests/ -v
-```
-
-### 10. Training (CLI)
-
-Train writes to the shared model volume. Edits to
-`services/trainer/train.csv` take effect on the next train (no rebuild).
-
-**Train and reload ai_router:**
+### Train
 
 ```bash
 ./scripts/demo.sh train
 ```
 
-This runs training via training-api and restarts ai_router. Verify:
+### Relabel Only
 
 ```bash
-./scripts/demo.sh curl
+./scripts/demo.sh relabel --limit 5
 ```
 
-Without script:
+### Augment Only
 
 ```bash
-docker compose -f compose/docker-compose.yaml --profile refine run --rm training-api train
-docker compose -f compose/docker-compose.yaml restart ai_router
+./scripts/demo.sh augment --run-id <run-id-from-relabel>
 ```
 
-### 11. Refine and Promote (CLI)
-
-Refinement is a two-phase flow (relabel + augment) powered by a local LLM
-(Ollama) and orchestrated by `training-api`. Run trainer first to
-produce `misclassified.csv`. See
-[REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md),
-[REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md),
-[TRAIN_AND_REFINE_GUI_PAGES_TECH.md](docs/auxiliary/architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md).
-
-**Full workflow (train, refine = relabel + augment, then promote):**
-
-```bash
-./scripts/demo.sh train
-./scripts/demo.sh refine
-./scripts/demo.sh promote
-```
-
-`demo.sh refine` runs the same two-phase pipeline as the Refine page:
-first relabeling misclassified rows, then per-label augmentation, and
-preparing a candidate dataset and metrics comparison under the
-`model_artifacts` volume.
-
-**Refine with row limit (faster; limits misclassified rows used in relabel):**
+### Full Split Refine (Relabel + Augment)
 
 ```bash
 ./scripts/demo.sh refine --limit 5
 ```
 
-**Promote only (after a successful refine run):**
+### Promote
 
 ```bash
 ./scripts/demo.sh promote
 ```
 
-CLI promotion uses the canonical `training-api promote` flow (same as
-the Refine UI **Promote** button): it retrains on `train_candidate.csv`,
-compares `metrics_before.json` vs `metrics_candidate.json`, and only
-copies the candidate to `train.csv` (and promotes `model.joblib`) when
-metrics improve.
-
-If promotion succeeded, restart ai_router:
+### Stop / Delete
 
 ```bash
-docker compose -f compose/docker-compose.yaml restart ai_router
-```
-
-**Environment variables (refine):** `REFINER_LIMIT` (max rows, 0 = no
-limit), `REFINER_BANNED_PATTERNS` (comma-separated substrings to
-reject), `OLLAMA_HOST`, `OLLAMA_MODEL`. See refiner docs for additional
-phase-specific settings (batch size, examples per label, parallelism).
-
-### 12. Demo Script Reference
-
-Full usage:
-
-```bash
-./scripts/demo.sh --help
-```
-
-Commands:
-
-```bash
-./scripts/demo.sh build [SERVICE]   # Build all or one service
-./scripts/demo.sh run [--dev] [--scale N]
 ./scripts/demo.sh stop
 ./scripts/demo.sh delete
-./scripts/demo.sh curl
-./scripts/demo.sh scaling
-./scripts/demo.sh scale N          # e.g. scale 1
-./scripts/demo.sh failure
-./scripts/demo.sh load-test
-./scripts/demo.sh logs [SERVICE...]
-./scripts/demo.sh test [gateway|ai_router]
-./scripts/demo.sh train
-./scripts/demo.sh refine [--limit N]
-./scripts/demo.sh promote          # Wrapper for promote.sh
 ```
 
-### 13. Promote Script
+## Demo Prompt Examples
 
-`scripts/promote.sh` retrains with `train_candidate.csv`, compares
-accuracy to the previous run, and promotes to `train.csv` only if metrics
-improve. No arguments. Run after refine (via UI or CLI).
+Paste these `text` values into the Query tab to demo routing across labels.
 
-### 14. Load Test Script
+### search
 
-`scripts/load_test.sh` sends multiple requests to the gateway. Default
-request count: 20 (set `REQUESTS` to override). Stack must be running.
+1. Compare nginx ingress vs traefik
+2. How does kubernetes scheduling work
+3. Best practices for docker multi-stage builds
+4. Terraform vs pulumi comparison
+5. Search for microservice patterns for observability
+6. What is an SLO and how do you measure it
+7. How to troubleshoot a 502 Bad Gateway in nginx
+8. Latest guidance on docker compose profiles
+9. Explain k8s liveness vs readiness probes
+10. Find resources for learning vector databases
 
-## Part II: Using the Frontend
+### image
 
-The gateway serves a web UI at <http://localhost:8000> (or your
-`GATEWAY_URL`). Use it for query routing, and optionally for training and
-refinement when the stack is run with the refine profile.
+1. Generate a logo for a coffee roaster, minimalist style
+2. Create an illustration of a cat wearing a space helmet
+3. Detect objects in this image and return labels
+4. Turn this photo into a watercolor painting
+5. Generate a realistic product mockup of a smartwatch on a dark background
+6. Create an icon set for a mobile app: settings, search, notifications
+7. Generate a poster design for "Summer Sale" with bold typography
+8. Analyze this screenshot and describe what UI elements are present
+9. Create a simple illustration diagram of a home network
+10. Generate a thumbnail image for a YouTube video about kubernetes
 
-### Opening the UI
+### ops
 
-1. Start the stack (see [Run the Stack](#2-run-the-stack)).
-2. Open a browser and go to <http://localhost:8000>.
+1. Kubectl get pods in namespace default
+2. Restart the deployment `my-service`
+3. Pod stuck in CrashLoopBackOff debug steps
+4. Check service health for gateway and ai-router
+5. Docker compose logs for `search_service` with tail 200
+6. Terraform plan looks risky, how do I review safely
+7. Rate limit requests on nginx ingress
+8. How to resize an EBS volume and extend the filesystem
+9. Fix permissions for a mounted volume in docker compose
+10. Troubleshoot why a container cannot reach host.docker.internal
 
-### Navigation
+### unknown
 
-The UI has three tabs in the header:
+1. Help
+2. Hi
+3. Do something
+4. Analyze
+5. I need assistance
+6. Something is broken
+7. It depends
+8. Explain that
+9. Test request
+10. Can you do the thing again
 
-- **Query** – Route a request and view the trace (default).
-- **Train** – Run training and view metrics and misclassified table.
-- **Refine** – Run refinement and view report, comparison, and Promote.
+## Using The Frontend
 
-Switch tabs by clicking **Query**, **Train**, or **Refine**. The Train and
-Refine tabs require the stack to be started with the **refine** profile
-(Redis and training-api running). If they are not available, the UI shows
-a message that the Training API is not available.
+The gateway UI is available at <http://localhost:8000>.
 
-### Query Tab
+- **Query** tab routes requests.
+- **Train** tab triggers training and displays metrics.
+- **Refine** tab runs relabel and augment phases and allows promotion.
 
-1. In the **Query** tab, type a question or phrase in the text area (e.g.
-   "compare nginx ingress vs traefik").
-2. Click **Submit**.
-3. View the result:
-   - **Route** – Selected route (search, image, ops, or unknown) and
-     confidence.
-   - **Explanation** – Tokens that influenced the classification.
-   - **Request Flow** – Hop diagram (web -> gateway -> ai-router -> backend).
-   - **Trace** – Timeline of events with timestamps.
-   - **Timings** – Classify, proxy, and total latency (ms).
-   - **Backend Response** – JSON from the backend (hidden for unknown).
-4. For **unknown** (404): Message "Unable to determine a suitable backend."
-5. For **502/503**: Message "Service temporarily unavailable."
+Train/Refine tabs require `training-api` in the running stack.
 
-### Train Tab
+## Troubleshooting
 
-Use this tab to run training from the UI and see metrics and
-misclassified rows without using the command line.
+### Both Native And Container Backends Running
 
-1. Ensure the stack is running with the **refine** profile (Redis and
-   training-api). See [Run the Stack](#2-run-the-stack).
-2. Open the **Train** tab.
-3. Start a training run (e.g. click the button to start training).
-4. Wait for completion. The UI receives the result via Server-Sent Events
-   (no polling). A progress indicator may be shown while the job runs.
-5. When the job completes, view:
-   - **Metrics** – Accuracy, classification report, confusion matrix.
-   - **Misclassified table** – Rows the model got wrong (text, true label,
-     predicted label, confidence).
+Set `OLLAMA_BACKEND_ENFORCE_EXCLUSIVE=true` and run with `demo.sh`.
+The script will fail fast or stop conflicting backend processes.
 
-If the Training API is not available, start the stack with
-`docker compose -f compose/docker-compose.yaml --profile refine up -d`.
+### Native Ollama Unreachable
 
-### Refine Tab
+- Verify local service:
+  `curl -s http://localhost:11434/api/tags`
+- Verify project endpoint:
+  `echo $OLLAMA_HOST`
 
-Use this tab to run the two refinement phases, inspect their artifacts
-and metrics, and promote the final candidate dataset when metrics
-improve.
+### Container Ollama Unreachable
 
-1. Ensure the stack is running with the **refine** profile and **Ollama**
-   is running (required for the refiner). Start with the refine profile;
-   Ollama is typically part of that profile.
-2. Open the **Refine** tab.
-3. To run **Relabeling**, click the relabel action. It calls
-   `/api/refine/relabel`, streams progress via SSE, and, when
-   completed, shows:
-   - **Report** – Rows processed, relabels proposed, rows skipped.
-   - **Comparison** – Metrics before and after for the relabel-only
-     candidate dataset.
-   - **Tables** – Proposed relabels and the relabel candidate dataset.
-4. To run **Augmentation**, click the augment action. It calls
-   `/api/refine/augment`, streams progress via SSE, and, when
-   completed, shows:
-   - **Report** – Examples proposed per label and any skipped labels.
-   - **Comparison** – Metrics before and after for the augmented
-     candidate dataset.
-   - **Tables** – Proposed examples and the final train candidate
-     dataset.
-5. If the comparison for the final candidate shows improvement, click
-   **Promote**. Promotion calls `/api/refine/promote`, retrains with the
-   candidate, and updates `train.csv` and model artifacts only if
-   metrics improve. The request may take a few minutes; the UI uses a
-   longer timeout for the promote call.
+- Confirm mode:
+  `OLLAMA_MODE=container`
+- Confirm host:
+  `OLLAMA_HOST=http://ollama:11434`
+- Check service:
+  `docker compose -f compose/docker-compose.yaml --profile refine-container ps`
 
-If the Training API or Ollama is not available, start the stack with the
-refine profile and ensure Ollama is up (e.g. first run may pull the
-model).
+### Missing Model
 
-## Reference
+Pull the selected model in active backend:
 
-### API Endpoints
+```bash
+ollama pull phi3:mini
+```
 
-| Endpoint | Method | Description |
-| --- | --- | --- |
-| `/` | GET | Frontend GUI |
-| `/health` | GET | Health check |
-| `/routes` | GET | Available routes |
-| `/api/request` | POST | Route and proxy (JSON: `{"text": "..."}`) |
+### Performance Regressions
 
-### Status Reference
+- Check `OLLAMA_NUM_PARALLEL`, `OLLAMA_NUM_CTX`, and `OLLAMA_NUM_PREDICT`.
+- Reduce relabel/augment parallelism first.
+- Re-run the benchmark protocol in
+  [PERFORMANCE_IMPROVEMENTS.md](../planning/PERFORMANCE_IMPROVEMENTS.md).
 
-| Scenario | HTTP | Trace backend hop |
-| --- | --- | --- |
-| Unknown classification | 404 | None |
-| Low confidence / low margin | 404 | None |
-| Backend unreachable | 502 | Attempted |
-| AI router unreachable | 503 | None |
-| Successful route | 200 | Yes |
+## See Also
 
-### Demo Prompts by Label
-
-Example prompts for demos (10 per label). Distinct from training data in
-`services/trainer/train.csv`.
-
-**Search (10):** what is exponential backoff in retries; explain
-consensus algorithm in distributed systems; how does consistent hashing
-work for load balancing; what is eventual consistency in databases;
-compare kafka vs rabbitmq for message queues; what is a dead letter
-queue; explain leader election in raft protocol; what is database
-sharding; how does bloom filter work; what is circuit breaker in
-resilience patterns.
-
-**Image (10):** redact sensitive information from a screenshot; find text
-in a screenshot and highlight it; create a collage from multiple photos;
-apply vintage filter to portrait; identify breed of dog from pet photo;
-generate alt text for accessibility; detect whether photo is indoors or
-outdoors; estimate time of day from photo lighting; identify landmarks in
-a vacation photo; create thumbnail for video preview.
-
-**Ops (10):** npm install fails with ENOENT - how to fix; jest tests
-timeout in CI - increase timeout; redis connection refused - firewall
-rules; elasticsearch cluster yellow - replica allocation; gunicorn workers
-dying - memory leak; postgres deadlock - identify blocking queries; kafka
-consumer lag increasing - scale consumers; s3 multipart upload fails -
-retry strategy; slack webhook returns 400 - payload format; datadog
-metrics not appearing - agent config.
-
-**Unknown (10):** good morning sunshine; howdy partner; what's for lunch;
-i'm bored; entertain me; spin a yarn; knock knock; are we good; right on;
-all good.
+- [PERFORMANCE_IMPROVEMENTS.md](../planning/PERFORMANCE_IMPROVEMENTS.md)
+- [CONFIGURATION.md](../architecture/CONFIGURATION.md)
+- [REFINER_FLOW.md](../refiner/REFINER_FLOW.md)
+- [TRAIN_AND_REFINE_GUI_PAGES_TECH.md](../architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md)

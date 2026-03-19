@@ -45,6 +45,18 @@ def _write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) ->
             w.writerow({k: r.get(k, "") for k in fieldnames})
 
 
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content or "")
+
+
 def _read_csv_rows(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -100,6 +112,26 @@ def _label_output_path(cfg: RefineConfig, run_id: str, label: str) -> Path:
     return cfg.augment_dir(run_id) / "labels" / f"proposed_examples.label_{safe}.csv"
 
 
+def _label_raw_output_path(cfg: RefineConfig, run_id: str, label: str) -> Path:
+    safe = label.replace("/", "_")
+    return cfg.augment_dir(run_id) / "labels" / f"raw_augment.label_{safe}.txt"
+
+
+def _label_prompt_output_path(cfg: RefineConfig, run_id: str, label: str) -> Path:
+    safe = label.replace("/", "_")
+    return cfg.augment_dir(run_id) / "labels" / f"prompt_augment.label_{safe}.txt"
+
+
+def _label_validation_output_path(cfg: RefineConfig, run_id: str, label: str) -> Path:
+    safe = label.replace("/", "_")
+    return cfg.augment_dir(run_id) / "labels" / f"augment.label_{safe}.validation.json"
+
+
+def _label_rejected_output_path(cfg: RefineConfig, run_id: str, label: str) -> Path:
+    safe = label.replace("/", "_")
+    return cfg.augment_dir(run_id) / "labels" / f"augment.label_{safe}.rejected_items.csv"
+
+
 def _parse_json_array(raw: str) -> list[dict[str, Any]] | None:
     text = (raw or "").strip()
     try:
@@ -120,6 +152,70 @@ def _parse_json_array(raw: str) -> list[dict[str, Any]] | None:
     return out
 
 
+def _parse_json_array_etl(
+    *,
+    raw: str,
+) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]], dict[str, Any]]:
+    text = (raw or "").strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        return None, [], {"error_code": "INVALID_JSON", "error_message": str(e)}
+
+    if not isinstance(data, list):
+        return (
+            None,
+            [],
+            {
+                "error_code": "NOT_JSON_ARRAY",
+                "found_type": type(data).__name__,
+            },
+        )
+
+    accepted: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    for idx, item in enumerate(data):
+        if not isinstance(item, dict):
+            rejected.append({"idx": idx, "error_code": "INVALID_ITEM_TYPE"})
+            continue
+
+        t = str(item.get("text") or "").strip()
+        l = str(item.get("label") or "").strip()
+
+        # Preserve current acceptance semantics (order of checks matters).
+        if len(t) < MIN_TEXT_LENGTH:
+            rejected.append(
+                {"idx": idx, "error_code": "TEXT_TOO_SHORT", "text": t, "label": l}
+            )
+            continue
+        if "\n" in t:
+            rejected.append(
+                {
+                    "idx": idx,
+                    "error_code": "TEXT_CONTAINS_NEWLINE",
+                    "text": t,
+                    "label": l,
+                }
+            )
+            continue
+        if l not in LABELS:
+            rejected.append(
+                {"idx": idx, "error_code": "INVALID_LABEL", "text": t, "label": l}
+            )
+            continue
+
+        accepted.append({"text": t, "label": l, "source_pattern": "augmentation"})
+
+    validation: dict[str, Any] = {
+        "error_code": None,
+        "parsed_items_count": int(len(data)),
+        "accepted_items_count": int(len(accepted)),
+        "rejected_items_count": int(len(rejected)),
+        "rejected_items": rejected,
+    }
+    return accepted, rejected, validation
+
+
 def run_augment_workers(
     cfg: RefineConfig,
     *,
@@ -138,6 +234,9 @@ def run_augment_workers(
             max_inflight_per_instance=cfg.ollama_max_inflight_per_instance,
             num_ctx=cfg.ollama_num_ctx,
             num_predict=cfg.ollama_num_predict,
+            temperature=cfg.refiner_temperature,
+            seed=cfg.refiner_seed,
+            structured_output_enabled=cfg.structured_output_enabled,
         )
 
     pool = get_ollama_pool(_mk_pool)
@@ -182,13 +281,31 @@ def run_augment_workers(
                 n = int(str(fields.get("n") or cfg.augment_n_per_label))
                 if label not in LABELS:
                     raise ValueError(f"Invalid label: {label}")
-                raw = pool.generate(prompt=augment_examples(label, n), system=SYSTEM_INSTRUCTIONS)
-                parsed = _parse_json_array(raw)
-                if parsed is None:
+
+                prompt = augment_examples(label, n)
+                raw = pool.generate(prompt=prompt, system=SYSTEM_INSTRUCTIONS)
+
+                _write_text(_label_raw_output_path(cfg, run_id, label), raw)
+                _write_text(_label_prompt_output_path(cfg, run_id, label), prompt)
+
+                accepted, rejected, validation = _parse_json_array_etl(raw=raw)
+                validation.update({"label": label, "n": int(n)})
+                _write_json(_label_validation_output_path(cfg, run_id, label), validation)
+
+                if rejected:
+                    _write_csv(
+                        _label_rejected_output_path(cfg, run_id, label),
+                        rejected,
+                        fieldnames=["idx", "error_code", "text", "label"],
+                    )
+
+                if accepted is None:
                     raise ValueError("Invalid JSON array from Ollama")
 
                 out_path = _label_output_path(cfg, run_id, label)
-                _write_csv(out_path, parsed, fieldnames=["text", "label", "source_pattern"])
+                _write_csv(
+                    out_path, accepted, fieldnames=["text", "label", "source_pattern"]
+                )
                 stream_ack(cfg.augment_tasks_stream, group, entry_id)
                 with done_lock:
                     done_labels.add(label)
@@ -254,15 +371,29 @@ def merge_augment_outputs(
     # Dedupe against existing texts; keep first occurrence.
     existing = set(train_df["text"].astype(str).str.strip())
     merged: list[dict[str, Any]] = []
+    invalid_rows_count = 0
+    duplicate_existing_count = 0
     for r in example_rows:
         text = str(r.get("text") or "").strip()
         label = str(r.get("label") or "").strip()
         if not text or label not in LABELS:
+            invalid_rows_count += 1
             continue
         if text in existing:
+            duplicate_existing_count += 1
             continue
         existing.add(text)
         merged.append({"text": text, "label": label, "source_pattern": r.get("source_pattern") or "augmentation"})
+
+    _write_json(
+        cfg.augment_dir(run_id) / "merge_augment.validation.json",
+        {
+            "input_rows_count": int(len(example_rows)),
+            "accepted_rows_count": int(len(merged)),
+            "invalid_rows_count": int(invalid_rows_count),
+            "duplicate_existing_count": int(duplicate_existing_count),
+        },
+    )
 
     _write_csv(cfg.augment_merged_csv(run_id), merged, fieldnames=["text", "label", "source_pattern"])
 

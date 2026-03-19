@@ -99,10 +99,10 @@ requirements.
 
 | ID | Requirement | Priority |
 | --- | --- | --- |
-| FR-020 | The model SHALL support exactly four labels: `search-service`, `image-service`, `ops-service`, `unknown`. | Must |
-| FR-021 | `search-service` SHALL be used for lookup, explanation, comparison queries. | Must |
-| FR-022 | `image-service` SHALL be used for image-related intents (detection, processing, etc.). | Must |
-| FR-023 | `ops-service` SHALL be used for DevOps, infrastructure, and troubleshooting queries. | Must |
+| FR-020 | The model SHALL support exactly four labels: `search`, `image`, `ops`, `unknown`. | Must |
+| FR-021 | `search` SHALL be used for lookup, explanation, comparison queries. | Must |
+| FR-022 | `image` SHALL be used for image-related intents (detection, processing, etc.). | Must |
+| FR-023 | `ops` SHALL be used for DevOps, infrastructure, and troubleshooting queries. | Must |
 | FR-024 | `unknown` SHALL be used for out-of-scope, unclear, or irrelevant requests and SHALL result in a 404-equivalent response. | Must |
 
 ### 5.2 Routing Policy

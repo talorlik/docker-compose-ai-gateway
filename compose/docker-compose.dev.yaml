@@ -1,68 +1,37 @@
 # Dev overlay: hot reload, bind mounts (NFR-025, NFR-027, NFR-032)
 # Usage: docker compose -f compose/docker-compose.yaml -f compose/docker-compose.dev.yaml up
 
+x-dev-command: &dev-command
+  - uvicorn
+  - app.main:app
+  - --host
+  - "0.0.0.0"
+  - --port
+  - "8000"
+  - --reload
+
 services:
   gateway:
     volumes:
       - ../services/gateway/app:/app/app:ro
-    command:
-      - uvicorn
-      - app.main:app
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "8000"
-      - --reload
-    user: root
+    command: *dev-command
 
   ai_router:
     volumes:
       - ../services/ai_router/app:/app/app:ro
-    command:
-      - uvicorn
-      - app.main:app
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "8000"
-      - --reload
-    user: root
+    command: *dev-command
 
   search_service:
     volumes:
       - ../services/search_service/app:/app/app:ro
-    command:
-      - uvicorn
-      - app.main:app
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "8000"
-      - --reload
-    user: root
+    command: *dev-command
 
   image_service:
     volumes:
       - ../services/image_service/app:/app/app:ro
-    command:
-      - uvicorn
-      - app.main:app
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "8000"
-      - --reload
-    user: root
+    command: *dev-command
 
   ops_service:
     volumes:
       - ../services/ops_service/app:/app/app:ro
-    command:
-      - uvicorn
-      - app.main:app
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "8000"
-      - --reload
-    user: root
+    command: *dev-command

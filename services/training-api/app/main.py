@@ -7,11 +7,13 @@ completion via SSE. Batch 5: train endpoints. Batch 6: refine and promote.
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 import json
 import logging
 import threading
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -44,6 +46,37 @@ REFINE_AUGMENT_KEY_PREFIX = "job:refine:augment:"
 REFINE_AUGMENT_EVENTS_CHANNEL_PREFIX = "job:refine:augment:events:"
 
 logger = logging.getLogger(__name__)
+JOB_RUNNER_ERRORS = (
+    RuntimeError,
+    ValueError,
+    OSError,
+    FileNotFoundError,
+    TimeoutError,
+    KeyError,
+    TypeError,
+)
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+def _safe_run_id(raw: str) -> str:
+    """Accept only canonical UUID run IDs for path usage."""
+    try:
+        return str(uuid.UUID(raw))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid run_id format") from exc
+
+
+def _safe_artifact_path(artifacts_dir: str, filename: str) -> str:
+    base = Path(artifacts_dir).resolve()
+    target = (base / filename).resolve()
+    if target.parent != base:
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
+    return str(target)
 
 
 def _validate_redis_on_startup() -> None:
@@ -66,13 +99,21 @@ def _train_job_runner(job_id: str) -> None:
             "created_at": now,
         })
         publish_job_event(channel, {"status": "completed", "result": result})
-    except Exception as e:
+    except JOB_RUNNER_ERRORS as e:
         set_job_state(key, {
             "status": "failed",
             "error": str(e),
             "created_at": now,
         })
         publish_job_event(channel, {"status": "failed", "error": str(e)})
+    except Exception as e:
+        logger.exception("Train job failed with unexpected error")
+        set_job_state(key, {
+            "status": "failed",
+            "error": "Internal error - check server logs",
+            "created_at": now,
+        })
+        publish_job_event(channel, {"status": "failed", "error": "Internal error"})
 
 
 def _relabel_job_runner(job_id: str, run_id: str) -> None:
@@ -101,7 +142,7 @@ def _relabel_job_runner(job_id: str, run_id: str) -> None:
             "created_at": now,
         })
         publish_job_event(channel, {"status": "completed", "result": result})
-    except Exception as e:
+    except JOB_RUNNER_ERRORS as e:
         full_error = str(e)
         short_error = getattr(e, "short_message", None) or _refiner_error_short_message(full_error)
         logger.exception("Relabel job failed")
@@ -116,6 +157,14 @@ def _relabel_job_runner(job_id: str, run_id: str) -> None:
             "error": short_error,
             "error_detail": full_error,
         })
+    except Exception as e:
+        logger.exception("Relabel job failed with unexpected error")
+        set_job_state(key, {
+            "status": "failed",
+            "error": "Internal error - check server logs",
+            "created_at": now,
+        })
+        publish_job_event(channel, {"status": "failed", "error": "Internal error"})
 
 
 def _augment_job_runner(job_id: str, run_id: str) -> None:
@@ -143,7 +192,7 @@ def _augment_job_runner(job_id: str, run_id: str) -> None:
             "created_at": now,
         })
         publish_job_event(channel, {"status": "completed", "result": result})
-    except Exception as e:
+    except JOB_RUNNER_ERRORS as e:
         full_error = str(e)
         short_error = getattr(e, "short_message", None) or _refiner_error_short_message(full_error)
         logger.exception("Augment job failed")
@@ -158,17 +207,27 @@ def _augment_job_runner(job_id: str, run_id: str) -> None:
             "error": short_error,
             "error_detail": full_error,
         })
+    except Exception as e:
+        logger.exception("Augment job failed with unexpected error")
+        set_job_state(key, {
+            "status": "failed",
+            "error": "Internal error - check server logs",
+            "created_at": now,
+        })
+        publish_job_event(channel, {"status": "failed", "error": "Internal error"})
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    _validate_redis_on_startup()
+    yield
 
 
 app = FastAPI(
     title="Training API",
     description="Train, refine, and promote flows with Redis-backed job state.",
+    lifespan=lifespan,
 )
-
-
-@app.on_event("startup")
-def startup() -> None:
-    _validate_redis_on_startup()
 
 
 @app.get("/health")
@@ -193,6 +252,7 @@ def post_train() -> dict:
 @app.get("/train/status/{job_id}")
 def get_train_status(job_id: str) -> dict:
     """Read Redis key; return job_id, status, result, error; 404 if missing."""
+    job_id = _safe_run_id(job_id)
     key = f"{TRAIN_KEY_PREFIX}{job_id}"
     state = get_job_state(key)
     if state is None:
@@ -228,14 +288,11 @@ def _train_events_sse_generator(job_id: str):
 @app.get("/train/events/{job_id}")
 def get_train_events(job_id: str):
     """SSE: SUBSCRIBE to job channel; stream first message as SSE; close. Handles disconnect via stream end."""
+    job_id = _safe_run_id(job_id)
     return StreamingResponse(
         _train_events_sse_generator(job_id),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=_SSE_HEADERS,
     )
 
 
@@ -282,14 +339,11 @@ def _relabel_events_sse_generator(job_id: str):
 
 @app.get("/refine/relabel/events/{job_id}")
 def get_refine_relabel_events(job_id: str):
+    job_id = _safe_run_id(job_id)
     return StreamingResponse(
         _relabel_events_sse_generator(job_id),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=_SSE_HEADERS,
     )
 
 
@@ -326,18 +380,14 @@ def _augment_events_sse_generator(job_id: str):
 
 @app.get("/refine/augment/events/{job_id}")
 def get_refine_augment_events(job_id: str):
+    job_id = _safe_run_id(job_id)
     return StreamingResponse(
         _augment_events_sse_generator(job_id),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=_SSE_HEADERS,
     )
 
 
-@app.post("/refine/promote")
 class PromoteRequest(BaseModel):
     run_id: str | None = None
 
@@ -353,17 +403,18 @@ def post_refine_promote(body: PromoteRequest) -> dict:
         import shutil
 
         artifacts_dir = os.environ.get("MODEL_ARTIFACTS_PATH", "/model")
+        run_id = _safe_run_id(body.run_id)
         cfg = RefineConfig.from_env(artifacts_dir)
-        cand = cfg.augment_candidate_csv(body.run_id)
-        before = cfg.metrics_before_path(body.run_id)
+        cand = cfg.augment_candidate_csv(run_id)
+        before = cfg.metrics_before_path(run_id)
         if not cand.exists():
-            cand = cfg.relabel_candidate_csv(body.run_id)
+            cand = cfg.relabel_candidate_csv(run_id)
         if not cand.exists():
             raise HTTPException(status_code=400, detail="No candidate CSV found for run_id")
 
-        shutil.copy2(cand, os.path.join(artifacts_dir, "train_candidate.csv"))
+        shutil.copy2(cand, _safe_artifact_path(artifacts_dir, "train_candidate.csv"))
         if before.exists():
-            shutil.copy2(before, os.path.join(artifacts_dir, "metrics_before.json"))
+            shutil.copy2(before, _safe_artifact_path(artifacts_dir, "metrics_before.json"))
     try:
         return run_promote()
     except FileNotFoundError as e:

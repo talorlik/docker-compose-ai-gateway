@@ -979,7 +979,7 @@ async def api_request(req: ApiRequest):
         )
 
     # 3b. Proxy to backend
-    backend_url = ROUTE_MAP[effective_route]
+    backend_url = ROUTE_MAP.get(effective_route)
     handle_body = {
         "request_id": request_id,
         "text": req.text,

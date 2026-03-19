@@ -92,7 +92,7 @@ flowchart TB
     OS[ops_service]
   end
 
-  subgraph training_stack [Training Stack - profile ops/refine]
+  subgraph training_stack [Training Stack - API & Redis always on; trainer/refiner on-demand]
     subgraph training_api_svc [Training API]
       API[Training API]
     end
@@ -101,17 +101,13 @@ flowchart TB
     Refiner[refiner (legacy)]
   end
 
-  subgraph ollama_svc [Ollama - profile refine]
-    Ollama1[Ollama_1]
-    Ollama2[Ollama_2]
-    Ollama3[Ollama_3]
+  subgraph ollama_svc [Ollama - profile refine-container]
+    Ollama[ollama]
   end
 
   subgraph volumes [Volumes]
     MA[model_artifacts]
-    OD1[ollama_data_1]
-    OD2[ollama_data_2]
-    OD3[ollama_data_3]
+    OD[ollama_data]
   end
 
   UI -->|GET /, POST /api/request| GW
@@ -130,12 +126,8 @@ flowchart TB
   Refiner -->|read/write| MA
   API -->|read artifacts| MA
   AR -->|load model| MA
-  API -->|LLM prompts via pool| Ollama1
-  API -->|LLM prompts via pool| Ollama2
-  API -->|LLM prompts via pool| Ollama3
-  Ollama1 -->|persist| OD1
-  Ollama2 -->|persist| OD2
-  Ollama3 -->|persist| OD3
+  API -->|LLM prompts (refine workers)| Ollama
+  Ollama -->|persist| OD
 ```
 
 **Flows:**
@@ -147,9 +139,10 @@ flowchart TB
   runs trainer via Compose, writes to model_artifacts, then PUBLISHes;
   client gets one SSE event and renders metrics/misclassified.
 - **Refine:** Same job pattern, but split into relabeling and augmentation
-  endpoints. Training API enqueues tasks into Redis Streams, workers call an
-  Ollama pool (multi-instance), then UI renders before/after metrics and
-  proposed rows; Promote calls POST /api/refine/promote with run_id.
+  endpoints. Training API enqueues tasks into Redis Streams, workers call the
+  Ollama service (single Compose service; client-side pool may target one URL),
+  then UI renders before/after metrics and proposed rows; Promote calls POST
+  /api/refine/promote with run_id.
 
 ## 3. Components
 
@@ -252,8 +245,9 @@ See [REFINER_PLAN.md](../refiner/REFINER_PLAN.md),
   `docker compose run training-api promote`). Same code for both triggers.
 - **Location:** `services/training-api/`. Profile `ops` or `refine`.
 - **Endpoints:** POST /train, GET /train/events/{job_id}, GET /train/status/{job_id},
-  GET /train/last; POST /refine, GET /refine/events/{job_id}, GET /refine/status/{job_id},
-  GET /refine/last; POST /refine/promote.
+  GET /train/last; POST /refine/relabel, GET /refine/relabel/events/{job_id};
+  POST /refine/augment, GET /refine/augment/events/{job_id};
+  POST /refine/promote.
 - **Responsibilities:**
   - Create jobs (job_id), store state in Redis (TTL e.g. 24h), spawn background
     task that runs trainer/refiner via Docker Compose
@@ -310,7 +304,7 @@ Gateway aggregates trace, returns response
 User (Train or Refine page)
     |
     v
-Gateway (POST /api/train or POST /api/refine) -> Training API
+Gateway (POST /api/train or POST /api/refine/relabel or /augment) -> Training API
     |
     v
 Training API: create job_id, store "pending" in Redis, spawn background task,
@@ -368,7 +362,7 @@ Each trace entry: `service`, `event`, `ts` (ISO 8601), optional `meta`.
   x-common-healthcheck, x-common-logging), health checks, profiles. Services
   run from built images.
 - **Central config:** `config/PROJECT_CONFIG.yaml` - single source of truth for
-  project-wide settings (paths, Redis URL, Ollama pool, refine knobs); see
+  project-wide settings (paths, Redis URL, Ollama URLs, refine knobs); see
   `CONFIGURATION.md` for details. Env files such as `env/.env.dev` are
   generated from this file via `scripts/generate_env.py` and consumed by
   Docker Compose (`env_file`).
@@ -384,10 +378,10 @@ Each trace entry: `service`, `event`, `ts` (ISO 8601), optional `meta`.
 
 | Profile | Services | When to Use |
 | --- | --- | --- |
-| (default) | gateway, ai_router, search_service, image_service, ops_service | Normal runtime |
+| (default) | gateway, ai_router, search_service, image_service, ops_service, redis, training-api | Normal runtime (includes Train/Refine API proxy and SSE) |
 | train | trainer | Retrain model: `--profile train run --rm trainer` |
-| refine | ollama, refiner | Dataset refinement: `--profile refine up` or `run --rm refiner` |
-| ops / refine | redis, training-api | Train/Refine UI: proxy and SSE; gateway shows "Training API not available" when inactive |
+| refine | refiner | Dataset refinement: `run --rm refiner` (with Ollama up; see refine-container) |
+| refine-container | ollama | Long-running Ollama for refine workers: e.g. `--profile refine-container up -d ollama` |
 
 ### 7.3 Volumes
 
@@ -405,7 +399,7 @@ Each trace entry: `service`, `event`, `ts` (ISO 8601), optional `meta`.
 ### 7.5 Health and Dependencies
 
 - Gateway depends on ai_router and all backends with `condition: service_healthy`
-- Training-api depends on Redis (e.g. `depends_on: redis`) when profile is active
+- Training-api depends on Redis (e.g. `depends_on: redis`)
 - Refiner depends on Ollama with `condition: service_healthy`
 - Health checks hit `GET /health` on each service (10s interval, 5s timeout)
 
@@ -446,7 +440,7 @@ one SSE event and renders result. No polling. See
 | Web UI | `GET /` | Browser (Query, Train, Refine via hash routing) |
 | Main API | `POST /api/request` | Browser, curl, scripts |
 | Train API | `POST /api/train`, `GET /api/train/events/{job_id}`, etc. | Browser (Train page) |
-| Refine API | `POST /api/refine`, `GET /api/refine/events/{job_id}`, `POST /api/refine/promote`, etc. | Browser (Refine page) |
+| Refine API | `POST /api/refine/relabel`, `POST /api/refine/augment`, `GET /api/refine/*/events/{job_id}`, `POST /api/refine/promote` | Browser (Refine page) |
 | Routes discovery | `GET /routes` | Clients needing backend URLs |
 | Health | `GET /health` | Compose health checks, load balancers |
 

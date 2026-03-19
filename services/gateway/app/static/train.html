@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
   <title>Train - AI Router Gateway</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/train.css">
@@ -46,15 +47,16 @@
     </section>
   </main>
   <div id="probs-modal-overlay" class="probs-modal-overlay hidden" aria-hidden="true">
-    <div id="probs-modal" class="probs-modal">
+    <div id="probs-modal" class="probs-modal" role="dialog" aria-modal="true" aria-labelledby="probs-modal-title">
       <div class="probs-modal-header">
-        <span class="probs-modal-title">Probs (JSON)</span>
+        <span class="probs-modal-title" id="probs-modal-title">Probs (JSON)</span>
         <button type="button" id="probs-modal-close" class="probs-modal-close" aria-label="Close">&#215;</button>
       </div>
       <pre id="probs-modal-body" class="probs-modal-body"></pre>
       <div id="probs-modal-resize" class="probs-modal-resize" aria-hidden="true"></div>
     </div>
   </div>
+  <script src="/static/utils.js"></script>
   <script src="/static/train.js"></script>
 </body>
 </html>

@@ -18,6 +18,8 @@ with training_api_imported():
         enqueue_relabel_batches,
         run_relabel_workers,
         _handle_task as handle_relabel_task,
+        _parse_json_response,
+        merge_relabel_outputs,
     )
     from app.refine.augment import (
         enqueue_augment_tasks,
@@ -31,6 +33,7 @@ def _cfg(tmp_path) -> RefineConfig:
         runs_root=tmp_path / "runs",
         relabel_batch_size=2,
         relabel_max_parallel_batches=1,
+        relabel_min_confidence=0.0,
         augment_n_per_label=3,
         augment_max_parallel_labels=1,
         ollama_urls=["http://ollama1:11434"],
@@ -146,6 +149,34 @@ def test_handle_relabel_task_parses_valid_response(tmp_path):
     assert result[0]["text"] == "hello"
     assert result[0]["suggested_label"] == "search"
     assert result[0]["confidence"] == 0.95
+
+
+def test_parse_json_response_accepts_code_fences():
+    raw = """```json
+[
+  {"text":"hello","suggested_label":"search","reason":"ok","confidence":0.9}
+]
+```"""
+    parsed = _parse_json_response(raw)
+    assert parsed is not None
+    assert len(parsed) == 1
+    assert parsed[0]["text"] == "hello"
+
+
+def test_parse_json_response_accepts_wrapped_array():
+    raw = '{"items":[{"text":"hello","suggested_label":"search","reason":"ok","confidence":0.9}]}'
+    parsed = _parse_json_response(raw)
+    assert parsed is not None
+    assert len(parsed) == 1
+    assert parsed[0]["suggested_label"] == "search"
+
+
+def test_parse_json_response_accepts_single_object():
+    raw = '{"text":"hello","suggested_label":"search","reason":"ok","confidence":0.9}'
+    parsed = _parse_json_response(raw)
+    assert parsed is not None
+    assert len(parsed) == 1
+    assert parsed[0]["text"] == "hello"
 
 
 def test_handle_relabel_task_raises_on_invalid_json(tmp_path):
@@ -337,6 +368,23 @@ def test_relabel_worker_publishes_error_on_bad_ollama_response(tmp_path, monkeyp
     mock_ack.assert_called_once_with("test:relabel:tasks", f"relabel-workers:{run_id}", "entry-1")
     # Should publish an error progress event
     assert any("failed" in str(evt.get("detail", "")).lower() for evt in progress_events)
+
+
+def test_merge_relabel_outputs_writes_candidate_csv_even_when_no_batches(tmp_path):
+    import pandas as pd
+
+    cfg = _cfg(tmp_path)
+    run_id = "r1"
+    # Do not create cfg.relabel_dir(run_id) / batches directory on purpose.
+    train_df = pd.DataFrame([{"text": "hello", "label": "unknown"}])
+
+    result = merge_relabel_outputs(cfg, run_id=run_id, train_df=train_df)
+
+    assert cfg.relabel_candidate_csv(run_id).exists()
+    assert cfg.relabel_merged_csv(run_id).exists()
+
+    # No proposals -> labels unchanged.
+    assert result.to_dict(orient="records") == train_df.to_dict(orient="records")
 
 
 def test_relabel_worker_reclaims_pending_entry_and_processes(tmp_path, monkeypatch):

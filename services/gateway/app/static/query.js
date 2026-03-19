@@ -7,13 +7,6 @@
   const resultSection = document.getElementById("result-section");
   const errorSection = document.getElementById("error-section");
 
-  function escapeHtml(s) {
-    if (typeof s !== "string") return "";
-    const div = document.createElement("div");
-    div.textContent = s;
-    return div.innerHTML;
-  }
-
   function showError(msg) {
     errorSection.classList.remove("hidden");
     document.getElementById("error-text").textContent = msg;
@@ -99,7 +92,7 @@
       return;
     }
 
-    content.innerHTML =
+    content.textContent =
       "Classify: " +
       (timings.classify ?? "-") +
       " ms | Proxy: " +

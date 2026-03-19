@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 import requests
 
@@ -41,6 +44,9 @@ class OllamaPool:
         max_inflight_per_instance: int,
         num_ctx: int,
         num_predict: int,
+        temperature: float,
+        seed: int,
+        structured_output_enabled: bool,
         status_channel: str = "ollama:status",
         probe_interval_seconds: float = 2.0,
     ) -> None:
@@ -53,6 +59,9 @@ class OllamaPool:
         self._max_inflight = max_inflight_per_instance
         self._num_ctx = num_ctx
         self._num_predict = num_predict
+        self._temperature = temperature
+        self._seed = seed
+        self._structured_output_enabled = structured_output_enabled
         self._status_channel = status_channel
         self._probe_interval_seconds = probe_interval_seconds
         self._stop = threading.Event()
@@ -94,7 +103,10 @@ class OllamaPool:
                 # Fall back to "least inflight" even if unhealthy - callers may
                 # retry or fail fast with a clearer error.
                 candidates = list(self._instances.values())
-            chosen = min(candidates, key=lambda i: (i.inflight, i.url))
+            import random
+            min_inflight = min(i.inflight for i in candidates)
+            ties = [i for i in candidates if i.inflight == min_inflight]
+            chosen = random.choice(ties)
             chosen.inflight += 1
             return chosen.url
 
@@ -117,13 +129,20 @@ class OllamaPool:
                 "options": {
                     "num_ctx": self._num_ctx,
                     "num_predict": self._num_predict,
+                    "temperature": self._temperature,
+                    "seed": self._seed,
                 },
             }
             if system is not None:
                 payload["system"] = system
+            if self._structured_output_enabled:
+                payload["format"] = "json"
             r = requests.post(endpoint, json=payload, timeout=self._timeout_seconds)
             r.raise_for_status()
-            return r.json()["response"]
+            data = r.json()
+            if "response" not in data:
+                raise KeyError(f"Ollama response missing 'response' key: {list(data.keys())}")
+            return data["response"]
         finally:
             self.release(url)
 
@@ -142,15 +161,18 @@ class OllamaPool:
                 prev = last_published.get(url)
                 if prev is None or prev != healthy:
                     last_published[url] = healthy
-                    publish_event(
-                        self._status_channel,
-                        {
-                            "ts": now,
-                            "url": url,
-                            "healthy": healthy,
-                            "error": err,
-                        },
-                    )
+                    try:
+                        publish_event(
+                            self._status_channel,
+                            {
+                                "ts": now,
+                                "url": url,
+                                "healthy": healthy,
+                                "error": err,
+                            },
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.debug("Failed to publish probe status for %s", url, exc_info=True)
             self._stop.wait(self._probe_interval_seconds)
 
     def _probe_one(self, url: str) -> tuple[bool, str | None]:
@@ -159,7 +181,6 @@ class OllamaPool:
             endpoint = f"{url.rstrip('/')}/api/tags"
             r = requests.get(endpoint, timeout=3)
             r.raise_for_status()
-            _ = json.loads(r.text)
             return True, None
         except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
             return False, str(e)

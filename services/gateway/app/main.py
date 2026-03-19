@@ -16,19 +16,20 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -42,8 +43,22 @@ T_ROUTE = float(os.getenv("T_ROUTE", "0.55"))
 T_MARGIN = float(os.getenv("T_MARGIN", "0.10"))
 TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "30"))
 TRAINING_API_URL = os.getenv("TRAINING_API_URL", "http://training-api:8000")
-PROMOTE_TIMEOUT = 300  # 5 min for POST /api/refine/promote (TECH §5.2)
-SSE_TIMEOUT = 3600  # 1h for events stream; close when API closes (Batch 8)
+PROMOTE_TIMEOUT = float(os.getenv("PROMOTE_TIMEOUT", "300"))
+SSE_TIMEOUT = float(os.getenv("SSE_TIMEOUT", "3600"))
+
+_JOB_ID_RE = re.compile(r"^[a-f0-9\-]{36}$")
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+_PROXY_ERRORS = (
+    httpx.ConnectError,
+    httpx.TimeoutException,
+    httpx.HTTPStatusError,
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -65,10 +80,10 @@ def setup_logging(service_name: str, level: str = "INFO") -> logging.Logger:
     """Configure JSON logging for request correlation (TECH-20.1)."""
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
-    logger = logging.getLogger(service_name)
-    logger.setLevel(getattr(logging, level.upper(), logging.INFO))
-    logger.addHandler(handler)
-    return logger
+    _logger = logging.getLogger(service_name)
+    _logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    _logger.addHandler(handler)
+    return _logger
 
 
 logger = setup_logging("gateway", os.getenv("LOG_LEVEL", "INFO"))
@@ -96,7 +111,7 @@ def make_trace_entry(
 
 class ApiRequest(BaseModel):
     request_id: Optional[str] = None
-    text: str
+    text: str = Field(..., max_length=10000)
     trace: Optional[List[Dict[str, Any]]] = None
 
 
@@ -126,6 +141,13 @@ class RouteInfo(BaseModel):
 
 class RoutesResponse(BaseModel):
     routes: List[RouteInfo]
+
+
+def _validate_job_id(job_id: str) -> str:
+    """Validate job_id matches UUID format to prevent path traversal."""
+    if not _JOB_ID_RE.match(job_id):
+        raise ValueError("Invalid job_id format")
+    return job_id
 
 
 async def timed_post(
@@ -168,12 +190,21 @@ def apply_policy(
 async def lifespan(application: FastAPI):
     application.state.http = httpx.AsyncClient(
         timeout=httpx.Timeout(TIMEOUT),
-        limits=httpx.Limits(max_connections=100, max_keepalive_connections=0),
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    )
+    application.state.sse_http = httpx.AsyncClient(
+        timeout=httpx.Timeout(SSE_TIMEOUT),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
+    )
+    application.state.promote_http = httpx.AsyncClient(
+        timeout=httpx.Timeout(PROMOTE_TIMEOUT),
+        limits=httpx.Limits(max_connections=5, max_keepalive_connections=2),
     )
     yield
-    http = getattr(application.state, "http", None)
-    if http is not None:
-        await http.aclose()
+    for attr in ("http", "sse_http", "promote_http"):
+        client = getattr(application.state, attr, None)
+        if client is not None:
+            await client.aclose()
 
 
 app = FastAPI(title="Gateway", version="0.1.0", lifespan=lifespan)
@@ -211,132 +242,128 @@ async def health():
 
 @app.get("/routes", response_model=RoutesResponse)
 async def routes():
-    """Return available routes and backend URLs (FR-061)."""
+    """Return available route labels (FR-061)."""
     return RoutesResponse(
         routes=[
-            RouteInfo(label=k, backend_url=v) for k, v in ROUTE_MAP.items()
+            RouteInfo(label=k, backend_url="(internal)") for k in ROUTE_MAP
         ]
     )
 
 
 def _training_api_proxy_error(err: Exception) -> JSONResponse:
     """Return 503 when training-api is unreachable (Batch 7)."""
+    logger.error("Training API proxy error: %s", err)
     return JSONResponse(
         status_code=503,
-        content={
-            "detail": "Training API unavailable",
-            "error": str(err),
-        },
+        content={"detail": "Training API unavailable"},
+    )
+
+
+def _safe_json(resp: httpx.Response) -> Any:
+    """Parse JSON from response, returning error dict on failure."""
+    try:
+        return resp.json()
+    except json.JSONDecodeError:
+        return {"detail": "Upstream returned non-JSON response", "status": resp.status_code}
+
+
+async def _proxy_post(path: str) -> JSONResponse:
+    """Generic POST proxy to training-api."""
+    http = app.state.http
+    try:
+        r = await http.post(f"{TRAINING_API_URL.rstrip('/')}{path}")
+        r.raise_for_status()
+        return JSONResponse(status_code=r.status_code, content=_safe_json(r))
+    except _PROXY_ERRORS as err:
+        return _training_api_proxy_error(err)
+
+
+async def _proxy_get(path: str) -> JSONResponse:
+    """Generic GET proxy to training-api."""
+    http = app.state.http
+    try:
+        r = await http.get(f"{TRAINING_API_URL.rstrip('/')}{path}")
+        r.raise_for_status()
+        return JSONResponse(status_code=r.status_code, content=_safe_json(r))
+    except _PROXY_ERRORS as err:
+        return _training_api_proxy_error(err)
+
+
+async def _stream_training_api_events(url: str) -> AsyncGenerator[bytes, None]:
+    """Stream response body from training-api (chunk-by-chunk). Batch 8."""
+    try:
+        async with app.state.sse_http.stream("GET", url) as upstream:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+    except _PROXY_ERRORS as exc:
+        logger.error("SSE proxy connection lost: %s", exc)
+        yield b"data: {\"status\": \"failed\", \"error\": \"SSE connection lost\"}\n\n"
+
+
+def _sse_response(job_id: str, events_path: str) -> Union[JSONResponse, StreamingResponse]:
+    """Build an SSE StreamingResponse for a validated job_id."""
+    try:
+        _validate_job_id(job_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"detail": "Invalid job_id format"})
+    url = f"{TRAINING_API_URL.rstrip('/')}{events_path}/{job_id}"
+    return StreamingResponse(
+        _stream_training_api_events(url),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
     )
 
 
 @app.post("/api/train")
 async def proxy_post_train():
     """Proxy POST /train to training-api (Batch 7)."""
-    http = app.state.http
-    try:
-        r = await http.post(f"{TRAINING_API_URL.rstrip('/')}/train")
-        return JSONResponse(status_code=r.status_code, content=r.json())
-    except (httpx.ConnectError, httpx.TimeoutException) as err:
-        return _training_api_proxy_error(err)
+    return await _proxy_post("/train")
 
 
 @app.get("/api/train/status/{job_id}")
 async def proxy_get_train_status(job_id: str):
     """Proxy GET /train/status/{job_id} to training-api (Batch 7)."""
-    http = app.state.http
     try:
-        r = await http.get(f"{TRAINING_API_URL.rstrip('/')}/train/status/{job_id}")
-        return JSONResponse(status_code=r.status_code, content=r.json())
-    except (httpx.ConnectError, httpx.TimeoutException) as err:
-        return _training_api_proxy_error(err)
+        _validate_job_id(job_id)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"detail": "Invalid job_id format"})
+    return await _proxy_get(f"/train/status/{job_id}")
 
 
 @app.get("/api/train/last")
 async def proxy_get_train_last():
     """Proxy GET /train/last to training-api (Batch 7)."""
-    http = app.state.http
-    try:
-        r = await http.get(f"{TRAINING_API_URL.rstrip('/')}/train/last")
-        return JSONResponse(status_code=r.status_code, content=r.json())
-    except (httpx.ConnectError, httpx.TimeoutException) as err:
-        return _training_api_proxy_error(err)
-
-
-async def _stream_training_api_events(url: str):
-    """Stream response body from training-api (chunk-by-chunk). Batch 8."""
-    timeout = httpx.Timeout(SSE_TIMEOUT)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream("GET", url) as upstream:
-            async for chunk in upstream.aiter_bytes():
-                yield chunk
+    return await _proxy_get("/train/last")
 
 
 @app.get("/api/train/events/{job_id}")
 async def proxy_get_train_events(job_id: str):
     """Stream GET /train/events/{job_id} from training-api (Batch 8)."""
-    url = f"{TRAINING_API_URL.rstrip('/')}/train/events/{job_id}"
-    return StreamingResponse(
-        _stream_training_api_events(url),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return _sse_response(job_id, "/train/events")
 
 
 @app.post("/api/refine/relabel")
 async def proxy_post_refine_relabel():
     """Proxy POST /refine/relabel to training-api."""
-    http = app.state.http
-    try:
-        r = await http.post(f"{TRAINING_API_URL.rstrip('/')}/refine/relabel")
-        return JSONResponse(status_code=r.status_code, content=r.json())
-    except (httpx.ConnectError, httpx.TimeoutException) as err:
-        return _training_api_proxy_error(err)
+    return await _proxy_post("/refine/relabel")
 
 
 @app.get("/api/refine/relabel/events/{job_id}")
 async def proxy_get_refine_relabel_events(job_id: str):
     """Stream GET /refine/relabel/events/{job_id} from training-api."""
-    url = f"{TRAINING_API_URL.rstrip('/')}/refine/relabel/events/{job_id}"
-    return StreamingResponse(
-        _stream_training_api_events(url),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return _sse_response(job_id, "/refine/relabel/events")
 
 
 @app.post("/api/refine/augment")
 async def proxy_post_refine_augment():
     """Proxy POST /refine/augment to training-api."""
-    http = app.state.http
-    try:
-        r = await http.post(f"{TRAINING_API_URL.rstrip('/')}/refine/augment")
-        return JSONResponse(status_code=r.status_code, content=r.json())
-    except (httpx.ConnectError, httpx.TimeoutException) as err:
-        return _training_api_proxy_error(err)
+    return await _proxy_post("/refine/augment")
 
 
 @app.get("/api/refine/augment/events/{job_id}")
 async def proxy_get_refine_augment_events(job_id: str):
     """Stream GET /refine/augment/events/{job_id} from training-api."""
-    url = f"{TRAINING_API_URL.rstrip('/')}/refine/augment/events/{job_id}"
-    return StreamingResponse(
-        _stream_training_api_events(url),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return _sse_response(job_id, "/refine/augment/events")
 
 
 @app.post("/api/refine/promote")
@@ -344,15 +371,16 @@ async def proxy_post_refine_promote(req: Request):
     """Proxy POST /refine/promote with long timeout (Batch 7)."""
     try:
         body = await req.json()
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(PROMOTE_TIMEOUT)
-        ) as client:
-            r = await client.post(
-                f"{TRAINING_API_URL.rstrip('/')}/refine/promote",
-                json=body,
-            )
-            return JSONResponse(status_code=r.status_code, content=r.json())
-    except (httpx.ConnectError, httpx.TimeoutException) as err:
+    except json.JSONDecodeError:
+        return JSONResponse(status_code=400, content={"detail": "Invalid JSON body"})
+    try:
+        r = await app.state.promote_http.post(
+            f"{TRAINING_API_URL.rstrip('/')}/refine/promote",
+            json=body,
+        )
+        r.raise_for_status()
+        return JSONResponse(status_code=r.status_code, content=_safe_json(r))
+    except _PROXY_ERRORS as err:
         return _training_api_proxy_error(err)
 
 
@@ -380,7 +408,8 @@ async def api_request(req: ApiRequest):
             http, f"{AI_ROUTER_URL}/classify", classify_body, headers
         )
         classify_resp.raise_for_status()
-    except (httpx.ConnectError, httpx.TimeoutException):
+    except _PROXY_ERRORS as exc:
+        logger.error("AI router error: %s", exc, extra={"request_id": request_id})
         trace.append(
             make_trace_entry(
                 "gateway",
@@ -400,8 +429,22 @@ async def api_request(req: ApiRequest):
             },
         )
 
-    cdata = classify_resp.json()
-    trace.append(cdata["trace_append"])
+    try:
+        cdata = classify_resp.json()
+        trace.append(cdata["trace_append"])
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        logger.error("Bad classify response: %s", exc, extra={"request_id": request_id})
+        total_ms = round((time.monotonic() - t_start) * 1000)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "request_id": request_id,
+                "route": None,
+                "message": "Invalid response from classification service",
+                "trace": trace,
+                "timings_ms": {"classify": classify_ms, "proxy": 0, "total": total_ms},
+            },
+        )
 
     route = cdata["route"]
     confidence = cdata["confidence"]
@@ -437,7 +480,21 @@ async def api_request(req: ApiRequest):
             ).model_dump(),
         )
 
-    backend_url = ROUTE_MAP[effective_route]
+    backend_url = ROUTE_MAP.get(effective_route)
+    if backend_url is None:
+        logger.error("No backend for route: %s", effective_route, extra={"request_id": request_id})
+        total_ms = round((time.monotonic() - t_start) * 1000)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "request_id": request_id,
+                "route": effective_route,
+                "message": f"No backend configured for route: {effective_route}",
+                "trace": trace,
+                "timings_ms": {"classify": classify_ms, "proxy": 0, "total": total_ms},
+            },
+        )
+
     handle_body = {"request_id": request_id, "text": req.text}
 
     try:
@@ -445,12 +502,13 @@ async def api_request(req: ApiRequest):
             http, f"{backend_url}/handle", handle_body, headers
         )
         handle_resp.raise_for_status()
-    except (httpx.ConnectError, httpx.TimeoutException) as err:
+    except _PROXY_ERRORS as err:
+        logger.error("Backend %s error: %s", effective_route, err, extra={"request_id": request_id})
         trace.append(
             make_trace_entry(
                 "gateway",
                 "responded",
-                meta={"status": 502, "error": str(err)},
+                meta={"status": 502, "error": "Backend unavailable"},
             ).model_dump()
         )
         total_ms = round((time.monotonic() - t_start) * 1000)
@@ -470,9 +528,27 @@ async def api_request(req: ApiRequest):
             },
         )
 
-    hdata = handle_resp.json()
-    trace.append(hdata["trace_append"])
-    backend_response = hdata.get("payload")
+    try:
+        hdata = handle_resp.json()
+        trace.append(hdata["trace_append"])
+        backend_response = hdata.get("payload")
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        logger.error("Bad backend response: %s", exc, extra={"request_id": request_id})
+        total_ms = round((time.monotonic() - t_start) * 1000)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "request_id": request_id,
+                "route": effective_route,
+                "message": "Invalid response from backend service",
+                "trace": trace,
+                "timings_ms": {
+                    "classify": classify_ms,
+                    "proxy": proxy_ms,
+                    "total": total_ms,
+                },
+            },
+        )
 
     trace.append(
         make_trace_entry("gateway", "responded", meta={"status": 200}).model_dump()

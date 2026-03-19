@@ -2,45 +2,9 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-# Ensure we import the gateway service's `app` package (this repo has multiple).
-for k in list(sys.modules.keys()):
-    if k == "app" or k.startswith("app."):
-        sys.modules.pop(k, None)
-
-os.environ.setdefault("T_ROUTE", "0.55")
-os.environ.setdefault("T_MARGIN", "0.10")
-
-from fastapi.testclient import TestClient  # noqa: E402
-
 from app.main import app  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def client():
-    with TestClient(app) as c:
-        yield c
-
-
-def test_health(client):
-    resp = client.get("/health")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "ok"
-
-
-def test_routes(client):
-    resp = client.get("/routes")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "routes" in data
-    labels = {r["label"] for r in data["routes"]}
-    assert labels == {"search", "image", "ops"}
 
 
 class MockResponse:
@@ -99,15 +63,22 @@ def make_handle_response(service: str) -> dict:
     }
 
 
-@pytest.fixture
-def mock_http():
-    """Fixture to mock the httpx client on app.state."""
-    mock_client = AsyncMock()
-    with patch.object(app.state, "http", mock_client, create=True):
-        yield mock_client
+def test_health(client):
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
 
 
-def test_known_route_search(client, mock_http):
+def test_routes(client):
+    resp = client.get("/routes")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "routes" in data
+    labels = {r["label"] for r in data["routes"]}
+    assert labels == {"search", "image", "ops"}
+
+
+def test_known_route_search(client):
     async def mock_post(_client, url, json, headers):
         if "/classify" in url:
             return MockResponse(
@@ -120,8 +91,6 @@ def test_known_route_search(client, mock_http):
         if "/handle" in url:
             return MockResponse(make_handle_response("search-service")), 20
         raise ValueError(f"Unexpected URL: {url}")
-
-    mock_http.post = AsyncMock(side_effect=mock_post)
 
     with patch("app.main.timed_post", side_effect=mock_post):
         resp = client.post(
@@ -140,7 +109,7 @@ def test_known_route_search(client, mock_http):
     assert len(data["trace"]) >= 3
 
 
-def test_known_route_image(client, mock_http):
+def test_known_route_image(client):
     async def mock_post(_client, url, json, headers):
         if "/classify" in url:
             return MockResponse(
@@ -165,7 +134,7 @@ def test_known_route_image(client, mock_http):
     assert data["route"] == "image"
 
 
-def test_known_route_ops(client, mock_http):
+def test_known_route_ops(client):
     async def mock_post(_client, url, json, headers):
         if "/classify" in url:
             return MockResponse(
@@ -190,7 +159,7 @@ def test_known_route_ops(client, mock_http):
     assert data["route"] == "ops"
 
 
-def test_unknown_route_model_unknown(client, mock_http):
+def test_unknown_route_model_unknown(client):
     async def mock_post(_client, url, json, headers):
         if "/classify" in url:
             return MockResponse(
@@ -216,7 +185,7 @@ def test_unknown_route_model_unknown(client, mock_http):
     assert data["timings_ms"]["proxy"] == 0
 
 
-def test_unknown_route_low_confidence(client, mock_http):
+def test_unknown_route_low_confidence(client):
     async def mock_post(_client, url, json, headers):
         if "/classify" in url:
             return MockResponse(
@@ -241,7 +210,7 @@ def test_unknown_route_low_confidence(client, mock_http):
     assert "responded" in trace_events
 
 
-def test_unknown_route_low_margin(client, mock_http):
+def test_unknown_route_low_margin(client):
     async def mock_post(_client, url, json, headers):
         if "/classify" in url:
             return MockResponse(
@@ -264,7 +233,7 @@ def test_unknown_route_low_margin(client, mock_http):
     assert data["route"] == "unknown"
 
 
-def test_request_id_generation(client, mock_http):
+def test_request_id_generation(client):
     async def mock_post(_client, url, json, headers):
         if "/classify" in url:
             assert "request_id" in json
@@ -292,7 +261,7 @@ def test_request_id_generation(client, mock_http):
     assert data["request_id"]
 
 
-def test_request_id_propagation(client, mock_http):
+def test_request_id_propagation(client):
     custom_id = "custom-request-id-12345"
 
     async def mock_post(_client, url, json, headers):
@@ -321,7 +290,7 @@ def test_request_id_propagation(client, mock_http):
     assert data["request_id"] == custom_id
 
 
-def test_trace_aggregation(client, mock_http):
+def test_trace_aggregation(client):
     async def mock_post(_client, url, json, headers):
         if "/classify" in url:
             return MockResponse(
@@ -362,7 +331,7 @@ def test_trace_aggregation(client, mock_http):
     assert "responded" in events
 
 
-def test_timings_present(client, mock_http):
+def test_timings_present(client):
     async def mock_post(_client, url, json, headers):
         if "/classify" in url:
             return MockResponse(
@@ -390,6 +359,4 @@ def test_timings_present(client, mock_http):
     assert "total" in timings
     assert timings["classify"] == 15
     assert timings["proxy"] == 25
-    # total timing is measured from wall clock - when timed_post is mocked it may
-    # not reflect the sum of mocked durations.
     assert timings["total"] >= 0

@@ -875,7 +875,7 @@ is not required; restart is the simplest correct approach.
 **Basic Request:**
 
 ```bash
-curl -X POST http://localhost:8080/api/request \
+curl -X POST http://localhost:8000/api/request \
   -H "Content-Type: application/json" \
   -d '{"text": "compare nginx ingress vs traefik"}'
 ```
@@ -1155,7 +1155,7 @@ docker compose up -d --scale search-service=3
 ### Test Request
 
 ```bash
-curl -X POST http://localhost:8080/api/request \
+curl -X POST http://localhost:8000/api/request \
   -H "Content-Type: application/json" \
   -d '{"text": "your query here"}'
 ```

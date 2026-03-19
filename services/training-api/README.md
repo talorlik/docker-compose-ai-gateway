@@ -9,7 +9,7 @@ with the default stack (no profile required for train).
 `docker compose`; this service runs Python only.
 
 **Refine:** The refine flow runs the refiner Python script and requires Ollama.
-Start Ollama (e.g. `docker compose --profile refine up -d ollama`) before
+Start Ollama (e.g. `docker compose --profile refine-container up -d ollama`) before
 running refinement.
 
 ## Environment

@@ -74,16 +74,16 @@ def _read_csv(path: str) -> Tuple[List[str], List[str]]:
 
     with open(path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        if "text" not in reader.fieldnames or "label" not in reader.fieldnames:
+        if not reader.fieldnames or "text" not in reader.fieldnames or "label" not in reader.fieldnames:
             raise ValueError("CSV must contain headers: text,label")
 
         for row in reader:
             t = (row.get("text") or "").strip()
-            l = (row.get("label") or "").strip()
-            if not t or not l:
+            lbl = (row.get("label") or "").strip()
+            if not t or not lbl:
                 continue
             texts.append(t)
-            labels.append(l)
+            labels.append(lbl)
 
     if len(texts) < 20:
         raise ValueError(f"Too few training rows after cleaning: {len(texts)}")
@@ -135,7 +135,8 @@ def _save_misclassified(
     probs: np.ndarray,
     labels_order: List[str],
 ) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
 
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
@@ -167,16 +168,19 @@ def train(cfg: TrainConfig) -> Dict:
     model = _build_model(cfg)
     model.fit(X_train, y_train)
 
+    # Canonical ordering for predict_proba/probability columns.
+    classes_order = list(model.classes_)
+
     y_pred = model.predict(X_val)
     acc = float(accuracy_score(y_val, y_pred))
 
     # Confusion matrix in stable label order for easy reading
-    cm = confusion_matrix(y_val, y_pred, labels=cfg.label_order).tolist()
+    cm = confusion_matrix(y_val, y_pred, labels=classes_order).tolist()
 
     report = classification_report(
         y_val,
         y_pred,
-        labels=cfg.label_order,
+        labels=classes_order,
         output_dict=True,
         zero_division=0,
     )
@@ -186,13 +190,19 @@ def train(cfg: TrainConfig) -> Dict:
 
     if cfg.misclassified_path:
         _save_misclassified(
-            cfg.misclassified_path, X_val_text, np.array(y_val), np.array(y_pred), probs, cfg.label_order
+            cfg.misclassified_path,
+            X_val_text,
+            np.array(y_val),
+            np.array(y_pred),
+            probs,
+            classes_order,
         )
 
     artifact = {
         "vectorizer": vectorizer,
         "model": model,
-        "labels": cfg.label_order,
+        # Persist the canonical label order used for predict_proba.
+        "labels": classes_order,
         "meta": {
             "created_utc": _utc_now_iso(),
             "data_path": os.path.basename(cfg.data_path),
@@ -254,12 +264,6 @@ def parse_args(argv: List[str]) -> TrainConfig:
         help="Use class_weight=balanced or none",
     )
 
-    p.add_argument(
-        "--label-order",
-        default=",".join(DEFAULT_LABEL_ORDER),
-        help="Comma-separated label order (must match dataset labels)",
-    )
-
     a = p.parse_args(argv)
 
     max_features = None if a.max_features == 0 else int(a.max_features)
@@ -281,7 +285,10 @@ def parse_args(argv: List[str]) -> TrainConfig:
         C=a.C,
         max_iter=a.max_iter,
         class_weight=class_weight,
-        label_order=[x.strip() for x in a.label_order.split(",") if x.strip()],
+        # Output label ordering must follow the trained model's internal
+        # class ordering (model.classes_). We keep DEFAULT_LABEL_ORDER here
+        # only for validating the dataset's labels.
+        label_order=DEFAULT_LABEL_ORDER,
         lowercase=not a.no_lowercase,
     )
 
@@ -296,7 +303,11 @@ def main(argv: List[str]) -> int:
 
     artifact = train(cfg)
 
-    joblib.dump(artifact, cfg.out_path)
+    try:
+        joblib.dump(artifact, cfg.out_path)
+    except OSError as e:
+        print(f"Failed to save model: {e}", file=sys.stderr)
+        return 1
 
     metrics = artifact["meta"]["metrics"]
     with open(cfg.metrics_path, "w", encoding="utf-8") as f:

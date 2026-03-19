@@ -37,18 +37,41 @@ Typical keys include:
 - Redis:
   - `REDIS_URL`
 - Ollama and refiner:
+  - `OLLAMA_MODE`
+  - `OLLAMA_BACKEND_ENFORCE_EXCLUSIVE`
+  - `OLLAMA_CONTAINER_SERVICE`
   - `OLLAMA_MODEL`
   - `OLLAMA_URLS`
   - `OLLAMA_HOST`
   - `OLLAMA_TIMEOUT_SECONDS`
   - `OLLAMA_MAX_INFLIGHT_PER_INSTANCE`
+  - `OLLAMA_MAX_LOADED_MODELS`
+  - `OLLAMA_NUM_PARALLEL`
+  - `OLLAMA_MAX_QUEUE`
+  - `OLLAMA_KEEP_ALIVE`
   - `OLLAMA_NUM_CTX`
   - `OLLAMA_NUM_PREDICT`
+  - `OLLAMA_FLASH_ATTENTION`
+  - `OLLAMA_KV_CACHE_TYPE`
+  - `REFINER_RELABEL_NUM_CTX`
+  - `REFINER_AUGMENT_NUM_CTX`
+  - `REFINER_RELABEL_NUM_PREDICT`
+  - `REFINER_AUGMENT_NUM_PREDICT`
+  - `REFINER_TEMPERATURE`
+  - `REFINER_SEED`
+  - `REFINER_STRUCTURED_OUTPUT_ENABLED`
   - `REFINER_RELABEL_BATCH_SIZE`
   - `REFINER_RELABEL_MAX_PARALLEL_BATCHES`
   - `REFINER_AUGMENT_N_PER_LABEL`
   - `REFINER_AUGMENT_MAX_PARALLEL_LABELS`
   - `REFINER_LIMIT`
+  - `DEMO_START_BACKEND`
+  - `DEMO_RUN_RELABEL`
+  - `DEMO_RUN_AUGMENT`
+  - `BENCH_PROFILE`
+  - `BENCH_EXPERIMENT_ID`
+  - `BENCH_METRICS_INTERVAL_SEC`
+  - `BENCH_MAX_RETRIES`
 
 Edit this file to change configuration globally instead of editing individual
 Compose files or service-specific env vars.
@@ -119,11 +142,22 @@ Changing any of these values in `PROJECT_CONFIG.yaml` and regenerating the env
 file is sufficient to:
 
 - Point training-api at a different Redis instance
-- Adjust refine batching and concurrency
-- Change Ollama hosts, model name, or context length
+- Adjust refine batching, retries, and concurrency
+- Change Ollama mode, host, model, keep-alive, queue, or token budgets
 - Move artifact and promotion paths
 
-### 5.2 Other Services
+### 5.2 Backend Selection And Mutual Exclusion
+
+The project supports two Ollama modes:
+
+- `OLLAMA_MODE=native`: host-native Ollama endpoint.
+- `OLLAMA_MODE=container`: Compose-managed `ollama` service.
+
+`scripts/demo.sh` reads mode settings from generated env files and enforces
+backend exclusivity when `OLLAMA_BACKEND_ENFORCE_EXCLUSIVE=true`. This keeps
+resource usage predictable by ensuring only one backend is active.
+
+### 5.3 Other Services
 
 Gateway, ai-router, and backend services continue to read configuration via env
 vars, but they can also be wired to the generated env files when needed. The

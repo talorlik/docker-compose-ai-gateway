@@ -3,7 +3,7 @@
 # Sends multiple requests to gateway; use with scaled backends to verify
 # distribution. Per TECH-18.3.
 
-set -e
+set -euo pipefail
 
 COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${COMPOSE_DIR}/compose/docker-compose.yaml"
@@ -59,9 +59,10 @@ main() {
 
   for ((i=0; i<REQUESTS; i++)); do
     prompt="${SEARCH_PROMPTS[$((i % ${#SEARCH_PROMPTS[@]}))]}"
+    json_body=$(python3 -c "import json; print(json.dumps({'text': '''$prompt'''}))" 2>/dev/null)
     resp=$(curl -s -w "\n%{http_code}" -X POST "$GATEWAY_URL/api/request" \
       -H "Content-Type: application/json" \
-      -d "{\"text\": \"$prompt\"}" 2>/dev/null) || { fail=$((fail + 1)); continue; }
+      -d "$json_body" 2>/dev/null) || { fail=$((fail + 1)); continue; }
 
     http_code=$(echo "$resp" | tail -1)
     body=$(echo "$resp" | sed '$d')

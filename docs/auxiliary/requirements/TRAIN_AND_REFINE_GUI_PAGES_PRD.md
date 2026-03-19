@@ -113,7 +113,7 @@ service, Redis-backed job state, and event-driven completion via SSE.
 | TR-FR-027 | The gateway SHALL proxy POST /api/train to training-api POST /train and SHALL return job_id with normal timeout. | Must |
 | TR-FR-028 | The gateway SHALL proxy GET /api/train/events/{job_id} to training-api GET /train/events/{job_id} as a streaming proxy (SSE). | Must |
 | TR-FR-029 | The gateway SHALL proxy GET /api/train/status/{job_id} and GET /api/train/last to the corresponding training-api endpoints. | Must |
-| TR-FR-030 | The gateway SHALL proxy POST /api/refine, GET /api/refine/events/{job_id}, GET /api/refine/status/{job_id}, and GET /api/refine/last to training-api. | Must |
+| TR-FR-030 | The gateway SHALL proxy POST /api/refine/relabel, POST /api/refine/augment, GET /api/refine/relabel/events/{job_id}, GET /api/refine/augment/events/{job_id} to training-api. | Must |
 | TR-FR-031 | The gateway SHALL proxy POST /api/refine/promote with a longer timeout (e.g. 5 min). | Must |
 | TR-FR-032 | For GET .../events/{job_id}, the gateway SHALL stream the SSE response from training-api to the client so EventSource works against the gateway origin. | Must |
 
@@ -186,8 +186,8 @@ service, Redis-backed job state, and event-driven completion via SSE.
 | TR-FR-061 | GET /train/events/{job_id} (SSE) SHALL subscribe to Redis channel job:train:events:{job_id} and SHALL send the first message (completed or failed) as an SSE event to the client then close the stream. | Must |
 | TR-FR-062 | GET /train/status/{job_id} SHALL read from Redis and return job_id, status, result, error; SHALL return 404 if unknown or expired. | Must |
 | TR-FR-063 | GET /train/last SHALL read the last run from the volume and return the same shape; SHALL return 404 if not present. | Must |
-| TR-FR-064 | POST /refine SHALL create a job and run the same pattern as train (background task, SET Redis, PUBLISH to job:refine:events:{job_id}); SHALL return `{ "job_id": "..." }` immediately. | Must |
-| TR-FR-065 | GET /refine/events/{job_id}, GET /refine/status/{job_id}, GET /refine/last SHALL follow the same pattern as train. | Must |
+| TR-FR-064 | POST /refine/relabel and POST /refine/augment SHALL each create a job and run the same pattern as train (background task, SET Redis, PUBLISH to respective events channel); SHALL return `{ "job_id": "...", "run_id": "..." }` immediately. | Must |
+| TR-FR-065 | GET /refine/relabel/events/{job_id} and GET /refine/augment/events/{job_id} SHALL stream progress and terminal events via SSE. | Must |
 | TR-FR-066 | POST /refine/promote (or POST /promote) SHALL call the same Python promote logic as CLI; SHALL be synchronous with longer timeout. | Must |
 | TR-FR-067 | POST /refine/promote SHALL return JSON with promoted (true/false), message, acc_before, acc_after; SHALL return 400 if train_candidate is missing; SHALL return 200 with promoted: false if metrics did not improve. | Must |
 

@@ -2,24 +2,38 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 
 import pytest
+from fastapi.testclient import TestClient
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "model", "model.joblib")
+_SERVICE_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+MODEL_PATH = os.path.join(_SERVICE_ROOT, "model", "model.joblib")
 os.environ["MODEL_PATH"] = MODEL_PATH
 
-from fastapi.testclient import TestClient  # noqa: E402
+sys.path.insert(0, _SERVICE_ROOT)
+
+_saved_app = {k: sys.modules.pop(k) for k in list(sys.modules) if k == "app" or k.startswith("app.")}
 
 from app.main import app  # noqa: E402
+
+_ai_router_app = app
+
+for k in list(sys.modules):
+    if k == "app" or k.startswith("app."):
+        sys.modules.pop(k, None)
+sys.modules.update(_saved_app)
+try:
+    sys.path.remove(_SERVICE_ROOT)
+except ValueError:
+    pass
 
 
 @pytest.fixture(scope="module")
 def client():
-    with TestClient(app) as c:
+    with TestClient(_ai_router_app) as c:
         yield c
 
 

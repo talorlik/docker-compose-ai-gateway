@@ -13,11 +13,11 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Callable, Optional
 
-# Process timeout for train (1 hour) / refine (10 minutes)
-RUN_TRAIN_TIMEOUT_SECONDS = 3600
-RUN_REFINE_TIMEOUT_SECONDS = 600
+RUN_TRAIN_TIMEOUT_SECONDS = int(os.environ.get("RUN_TRAIN_TIMEOUT_SECONDS", "3600"))
+RUN_REFINE_TIMEOUT_SECONDS = int(os.environ.get("RUN_REFINE_TIMEOUT_SECONDS", "600"))
 
 # Allowed base paths for env-derived dirs (volume mounts); plus cwd for local CLI.
 _ALLOWED_PATH_PREFIXES = ("/model", "/promote_target", "/workspace")
@@ -35,6 +35,15 @@ def _validate_dir_under_allowed(path: str) -> str:
     ):
         raise ValueError(f"Path not under allowed base: {real}")
     return real
+
+
+def _safe_file_under_dir(base_dir: str, filename: str) -> str:
+    """Return a safe file path constrained to base_dir."""
+    base = Path(base_dir).resolve()
+    target = (base / filename).resolve()
+    if target.parent != base:
+        raise ValueError(f"Unsafe file path outside base directory: {target}")
+    return str(target)
 
 
 def run_train(
@@ -69,8 +78,8 @@ def run_train(
     promote_dir = _validate_dir_under_allowed(
         promote_target_path or os.environ.get("PROMOTE_TARGET_PATH", "/promote_target")
     )
-    train_csv = os.path.join(promote_dir, "train.csv")
-    train_py = os.path.join(work_dir, "services", "trainer", "train.py")
+    train_csv = _safe_file_under_dir(promote_dir, "train.csv")
+    train_py = str((Path(work_dir) / "services" / "trainer" / "train.py").resolve())
     if not os.path.isfile(train_py):
         raise RuntimeError(f"Trainer script not found: {train_py}")
     if not os.path.isfile(train_csv):
@@ -82,11 +91,11 @@ def run_train(
         "--data",
         train_csv,
         "--out",
-        os.path.join(artifacts_dir, "model.joblib"),
+        _safe_file_under_dir(artifacts_dir, "model.joblib"),
         "--metrics",
-        os.path.join(artifacts_dir, "metrics.json"),
+        _safe_file_under_dir(artifacts_dir, "metrics.json"),
         "--misclassified",
-        os.path.join(artifacts_dir, "misclassified.csv"),
+        _safe_file_under_dir(artifacts_dir, "misclassified.csv"),
     ]
 
     result = subprocess.run(
@@ -107,7 +116,7 @@ def run_train(
 
 def _read_train_artifacts(artifacts_dir: str) -> dict[str, Any]:
     """Read metrics.json and misclassified.csv from artifacts dir."""
-    metrics_path = os.path.join(artifacts_dir, "metrics.json")
+    metrics_path = _safe_file_under_dir(artifacts_dir, "metrics.json")
     if not os.path.exists(metrics_path):
         raise RuntimeError(f"Artifacts missing: {metrics_path}")
 
@@ -118,7 +127,7 @@ def _read_train_artifacts(artifacts_dir: str) -> dict[str, Any]:
     classification_report = metrics.get("classification_report", {})
     confusion_matrix = metrics.get("confusion_matrix", [])
 
-    misclassified_path = os.path.join(artifacts_dir, "misclassified.csv")
+    misclassified_path = _safe_file_under_dir(artifacts_dir, "misclassified.csv")
     misclassified: list[dict[str, Any]] = []
     if os.path.exists(misclassified_path):
         with open(misclassified_path, encoding="utf-8", newline="") as f:
@@ -143,7 +152,7 @@ def get_last_train_result(
     Used by GET /train/last. Fixed path: MODEL_ARTIFACTS_PATH or /model.
     """
     artifacts_dir = model_artifacts_path or os.environ.get("MODEL_ARTIFACTS_PATH", "/model")
-    metrics_path = os.path.join(artifacts_dir, "metrics.json")
+    metrics_path = _safe_file_under_dir(artifacts_dir, "metrics.json")
     if not os.path.exists(metrics_path):
         return None
     try:
@@ -232,14 +241,20 @@ def run_refine(
     promote_dir = _validate_dir_under_allowed(
         promote_target_path or os.environ.get("PROMOTE_TARGET_PATH", "/promote_target")
     )
-    refiner_app = os.path.join(work_dir, "services", "refiner", "app.py")
-    refiner_cwd = os.path.join(work_dir, "services", "refiner")
+    refiner_app = str((Path(work_dir) / "services" / "refiner" / "app.py").resolve())
+    refiner_cwd = str((Path(work_dir) / "services" / "refiner").resolve())
     if not os.path.isfile(refiner_app):
         raise RuntimeError(f"Refiner script not found: {refiner_app}")
 
-    env = {**os.environ}
+    _ALLOWED_ENV_KEYS = {
+        "PATH", "HOME", "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED",
+        "OLLAMA_HOST", "OLLAMA_MODEL", "REFINER_LIMIT",
+        "REFINER_BANNED_PATTERNS", "REFINER_DATA_DIR", "REFINER_TRAIN_PATH",
+        "LOG_LEVEL",
+    }
+    env = {k: v for k, v in os.environ.items() if k in _ALLOWED_ENV_KEYS}
     env["REFINER_DATA_DIR"] = artifacts_dir
-    env["REFINER_TRAIN_PATH"] = os.path.join(promote_dir, "train.csv")
+    env["REFINER_TRAIN_PATH"] = _safe_file_under_dir(promote_dir, "train.csv")
     refiner_limit = os.environ.get("REFINER_LIMIT")
     if refiner_limit is not None and str(refiner_limit).strip() != "":
         env["REFINER_LIMIT"] = str(refiner_limit).strip()
@@ -255,7 +270,8 @@ def run_refine(
 
     stderr_lines: list[str] = []
     try:
-        assert proc.stderr is not None  # guaranteed by PIPE
+        if proc.stderr is None:
+            raise RuntimeError("Failed to capture refiner stderr")
         for line in proc.stderr:
             stderr_lines.append(line)
             if progress_callback:
@@ -264,6 +280,10 @@ def run_refine(
                     progress_callback(progress["detail"])
         proc.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise
+    except Exception:
         proc.kill()
         proc.wait()
         raise
@@ -286,7 +306,7 @@ def run_refine(
     _run_trainer_on_candidate(
         work_dir, artifacts_dir, promote_dir, timeout_seconds
     )
-    metrics_after = _read_metrics_only(os.path.join(artifacts_dir, "metrics_candidate.json"))
+    metrics_after = _read_metrics_only(_safe_file_under_dir(artifacts_dir, "metrics_candidate.json"))
 
     return {
         "report": report,
@@ -303,14 +323,14 @@ def _read_refine_artifacts(
     train_candidate_sample_size: int,
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict], list[dict], list[dict]]:
     """Read refinement_report.json, CSVs, metrics_before; sample of train_candidate."""
-    report_path = os.path.join(artifacts_dir, "refinement_report.json")
+    report_path = _safe_file_under_dir(artifacts_dir, "refinement_report.json")
     if not os.path.exists(report_path):
         raise RuntimeError(f"Refiner artifacts missing: {report_path}")
 
     with open(report_path, encoding="utf-8") as f:
         report = json.load(f)
 
-    metrics_before = _read_metrics_only(os.path.join(artifacts_dir, "metrics_before.json"))
+    metrics_before = _read_metrics_only(_safe_file_under_dir(artifacts_dir, "metrics_before.json"))
 
     def _read_csv_rows(path: str) -> list[dict[str, Any]]:
         if not os.path.exists(path):
@@ -318,9 +338,9 @@ def _read_refine_artifacts(
         with open(path, encoding="utf-8", newline="") as f:
             return list(csv.DictReader(f))
 
-    proposed_relabels = _read_csv_rows(os.path.join(artifacts_dir, "proposed_relabels.csv"))
-    proposed_examples = _read_csv_rows(os.path.join(artifacts_dir, "proposed_examples.csv"))
-    train_candidate_path = os.path.join(artifacts_dir, "train_candidate.csv")
+    proposed_relabels = _read_csv_rows(_safe_file_under_dir(artifacts_dir, "proposed_relabels.csv"))
+    proposed_examples = _read_csv_rows(_safe_file_under_dir(artifacts_dir, "proposed_examples.csv"))
+    train_candidate_path = _safe_file_under_dir(artifacts_dir, "train_candidate.csv")
     all_candidate = _read_csv_rows(train_candidate_path)
     train_candidate_sample = all_candidate[:train_candidate_sample_size] if all_candidate else []
 
@@ -337,7 +357,7 @@ def get_last_refine_result(
     absent. Used by GET /refine/last.
     """
     artifacts_dir = model_artifacts_path or os.environ.get("MODEL_ARTIFACTS_PATH", "/model")
-    report_path = os.path.join(artifacts_dir, "refinement_report.json")
+    report_path = _safe_file_under_dir(artifacts_dir, "refinement_report.json")
     if not os.path.exists(report_path):
         return None
     try:
@@ -346,7 +366,7 @@ def get_last_refine_result(
         )
     except (OSError, json.JSONDecodeError, RuntimeError):
         return None
-    metrics_after = _read_metrics_only(os.path.join(artifacts_dir, "metrics_candidate.json"))
+    metrics_after = _read_metrics_only(_safe_file_under_dir(artifacts_dir, "metrics_candidate.json"))
     return {
         "report": report,
         "metrics_before": metrics_before,
@@ -375,10 +395,10 @@ def _run_trainer_on_candidate(
     timeout_seconds: int,
 ) -> None:
     """Run trainer Python script with train_candidate.csv to produce metrics_candidate.json and model_candidate.joblib."""
-    candidate_csv = os.path.join(artifacts_dir, "train_candidate.csv")
+    candidate_csv = _safe_file_under_dir(artifacts_dir, "train_candidate.csv")
     if not os.path.isfile(candidate_csv):
         raise RuntimeError(f"train_candidate.csv not found: {candidate_csv}")
-    train_py = os.path.join(work_dir, "services", "trainer", "train.py")
+    train_py = str((Path(work_dir) / "services" / "trainer" / "train.py").resolve())
     if not os.path.isfile(train_py):
         raise RuntimeError(f"Trainer script not found: {train_py}")
 
@@ -388,9 +408,9 @@ def _run_trainer_on_candidate(
         "--data",
         candidate_csv,
         "--out",
-        os.path.join(artifacts_dir, "model_candidate.joblib"),
+        _safe_file_under_dir(artifacts_dir, "model_candidate.joblib"),
         "--metrics",
-        os.path.join(artifacts_dir, "metrics_candidate.json"),
+        _safe_file_under_dir(artifacts_dir, "metrics_candidate.json"),
         "--no-misclassified",
     ]
 
@@ -436,17 +456,17 @@ def run_promote(
         compose_working_dir or os.environ.get("COMPOSE_WORKING_DIR", ".")
     )
 
-    candidate_path = os.path.join(artifacts_dir, "train_candidate.csv")
+    candidate_path = _safe_file_under_dir(artifacts_dir, "train_candidate.csv")
     if not os.path.exists(candidate_path):
         raise FileNotFoundError(
             "train_candidate.csv not found. Run refiner first."
         )
 
-    metrics_before = _read_metrics_only(os.path.join(artifacts_dir, "metrics_before.json"))
+    metrics_before = _read_metrics_only(_safe_file_under_dir(artifacts_dir, "metrics_before.json"))
     acc_before = float(metrics_before.get("accuracy") or 0.0)
 
     _run_trainer_on_candidate(work_dir, artifacts_dir, promote_dir, timeout_seconds)
-    metrics_after_path = os.path.join(artifacts_dir, "metrics_candidate.json")
+    metrics_after_path = _safe_file_under_dir(artifacts_dir, "metrics_candidate.json")
     if not os.path.exists(metrics_after_path):
         return {
             "promoted": False,
@@ -462,14 +482,14 @@ def run_promote(
     if acc_before == 0 or acc_after > acc_before:
         # Promote: copy train_candidate to promote target as train.csv
         os.makedirs(promote_dir, exist_ok=True)
-        dest_train = os.path.join(promote_dir, "train.csv")
+        dest_train = _safe_file_under_dir(promote_dir, "train.csv")
         shutil.copy2(candidate_path, dest_train)
         # Copy model_candidate to model.joblib and metrics_candidate to metrics.json in artifacts
-        model_candidate = os.path.join(artifacts_dir, "model_candidate.joblib")
-        model_final = os.path.join(artifacts_dir, "model.joblib")
+        model_candidate = _safe_file_under_dir(artifacts_dir, "model_candidate.joblib")
+        model_final = _safe_file_under_dir(artifacts_dir, "model.joblib")
         if os.path.exists(model_candidate):
             shutil.copy2(model_candidate, model_final)
-        metrics_final = os.path.join(artifacts_dir, "metrics.json")
+        metrics_final = _safe_file_under_dir(artifacts_dir, "metrics.json")
         with open(metrics_final, "w", encoding="utf-8") as f:
             json.dump(metrics_after, f, indent=2)
         return {

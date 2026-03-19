@@ -66,7 +66,8 @@ For each row, propose the correct intent label.
 {rows_json}
 
 ## OUTPUT
-Respond with valid JSON only, as an array with exactly {len(rows)} objects.
+Respond with valid JSON only as a JSON array only. The response must start with
+`[` and end with `]` and include exactly {len(rows)} objects.
 
 Schema:
 [{{"text":"<original text>","suggested_label":"<label>","reason":"<one sentence>","confidence":0.0}}, ...]
@@ -74,6 +75,7 @@ Schema:
 ## GUARDRAILS
 - suggested_label must be one of: {labels_str}
 - keep the same ordering as input rows
+- Each object must include the exact `text` value from the corresponding input row.
 - output JSON only, no extra text
 """
 

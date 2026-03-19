@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
   <title>Query - AI Router Gateway</title>
   <link rel="stylesheet" href="/static/base.css">
   <link rel="stylesheet" href="/static/query.css">
@@ -78,7 +79,7 @@
         </div>
       </section>
 
-      <section id="error-section" class="error-section hidden">
+      <section id="error-section" class="error-section hidden" role="alert" aria-live="assertive">
         <h2>Error</h2>
         <p id="error-text"></p>
       </section>

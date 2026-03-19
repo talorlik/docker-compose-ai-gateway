@@ -3,13 +3,11 @@
 
 volumes:
   model_artifacts:
-  ollama_data_1:
-  ollama_data_2:
-  ollama_data_3:
+  ollama_data:
 
 x-env-file-defaults: &env-file-defaults
   env_file:
-    - ../env/.env.dev
+    - ${PROJECT_ENV_FILE:-../env/.env.dev}
 
 x-common-env: &common-env
   LOG_LEVEL: info
@@ -64,7 +62,7 @@ services:
     logging:
       <<: *common-logging
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   ai_router:
     build:
@@ -127,64 +125,29 @@ services:
     logging:
       <<: *common-logging
 
-  ollama_1:
-    image: ollama/ollama:latest
+  ollama:
+    image: ollama/ollama:0.6
+    profiles:
+      - refine-container
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
-      - ollama_data_1:/root/.ollama
+      - ollama_data:/root/.ollama
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: "${OLLAMA_MAX_LOADED_MODELS:-1}"
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"
+      OLLAMA_MAX_QUEUE: "${OLLAMA_MAX_QUEUE:-512}"
+      OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:-30m}"
+      OLLAMA_FLASH_ATTENTION: "${OLLAMA_FLASH_ATTENTION:-0}"
+      OLLAMA_KV_CACHE_TYPE: "${OLLAMA_KV_CACHE_TYPE:-f16}"
     entrypoint: ["/bin/sh", "-c"]
     command: >
       "ollama serve &
-       sleep 5 &&
-       ollama pull phi3:mini &&
+       until ollama list >/dev/null 2>&1; do sleep 1; done &&
+       ollama pull ${OLLAMA_MODEL:-phi3:mini} &&
        wait"
     healthcheck:
-      test: ["CMD", "sh", "-c", "ollama list | grep -q phi3:mini"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 600s
-    restart: unless-stopped
-    logging:
-      <<: *common-logging
-
-  ollama_2:
-    image: ollama/ollama:latest
-    ports:
-      - "11435:11434"
-    volumes:
-      - ollama_data_2:/root/.ollama
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "ollama serve &
-       sleep 5 &&
-       ollama pull phi3:mini &&
-       wait"
-    healthcheck:
-      test: ["CMD", "sh", "-c", "ollama list | grep -q phi3:mini"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 600s
-    restart: unless-stopped
-    logging:
-      <<: *common-logging
-
-  ollama_3:
-    image: ollama/ollama:latest
-    ports:
-      - "11436:11434"
-    volumes:
-      - ollama_data_3:/root/.ollama
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "ollama serve &
-       sleep 5 &&
-       ollama pull phi3:mini &&
-       wait"
-    healthcheck:
-      test: ["CMD", "sh", "-c", "ollama list | grep -q phi3:mini"]
+      test: ["CMD", "sh", "-c", "ollama list | grep -q ${OLLAMA_MODEL:-phi3:mini}"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -199,17 +162,10 @@ services:
       dockerfile: Dockerfile
     profiles:
       - refine
-    depends_on:
-      ollama_1:
-        condition: service_healthy
-      ollama_2:
-        condition: service_healthy
-      ollama_3:
-        condition: service_healthy
     environment:
       <<: *common-env
-      OLLAMA_HOST: http://ollama_1:11434
-      OLLAMA_MODEL: phi3:mini
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi3:mini}
     volumes:
       # Shared volume: trainer writes to /model; refiner reads from /data
       - model_artifacts:/data
@@ -220,6 +176,11 @@ services:
 
   redis:
     image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
     logging:
       <<: *common-logging
 
@@ -230,17 +191,12 @@ services:
     <<: *env-file-defaults
     depends_on:
       redis:
-        condition: service_started
-      ollama_1:
-        condition: service_healthy
-      ollama_2:
-        condition: service_healthy
-      ollama_3:
         condition: service_healthy
     environment:
       <<: *common-env
     volumes:
-      - ..:/workspace
+      - ../services:/workspace/services:ro
+      - ../scripts:/workspace/scripts:ro
       - model_artifacts:/model
       - ../services/trainer:/promote_target
     healthcheck:

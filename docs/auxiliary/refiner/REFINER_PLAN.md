@@ -196,7 +196,7 @@ reproducibility across macOS, Linux, and Windows + WSL2.
 1. `docker compose --profile train run --rm trainer`
 2. `docker compose --profile refine run --rm refiner`
 
-Ollama pulls `phi3:mini` automatically when the refine profile
+Ollama pulls `phi3:mini` automatically when the refine-container profile
 starts; no manual pull is required. First run may take a minute
 to download the model; later runs reuse the cached model.
 
