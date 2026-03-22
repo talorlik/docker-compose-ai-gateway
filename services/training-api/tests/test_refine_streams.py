@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pandas as pd  # pylint: disable=import-error
 import pytest
 
 from import_training_api import training_api_imported
@@ -33,9 +34,13 @@ def _cfg(tmp_path) -> RefineConfig:
         runs_root=tmp_path / "runs",
         relabel_batch_size=2,
         relabel_max_parallel_batches=1,
-        relabel_min_confidence=0.0,
         augment_n_per_label=3,
         augment_max_parallel_labels=1,
+        augment_verify_labels=False,
+        augment_verify_min_confidence=0.8,
+        augment_max_text_length=100,
+        augment_seed_examples=3,
+        promote_accuracy_tolerance=0.01,
         ollama_urls=["http://ollama1:11434"],
         ollama_model="phi3:mini",
         ollama_timeout_seconds=10,
@@ -45,11 +50,21 @@ def _cfg(tmp_path) -> RefineConfig:
         refiner_temperature=0.1,
         refiner_seed=42,
         structured_output_enabled=True,
+        relabel_min_confidence=0.0,
         relabel_tasks_stream="test:relabel:tasks",
         augment_tasks_stream="test:augment:tasks",
         relabel_consumer_group="relabel-workers",
         augment_consumer_group="augment-workers",
         events_channel_prefix="test:events:",
+    )
+
+
+def _train_df_for_augment() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"text": "find restaurants nearby", "label": "search"},
+            {"text": "compare cloud providers", "label": "search"},
+        ]
     )
 
 
@@ -122,7 +137,7 @@ def test_enqueue_augment_fields_contain_label_and_n(tmp_path):
     fields = mock_add.call_args[0][1]
     assert fields["run_id"] == "r2"
     assert fields["label"] == "image"
-    assert fields["n"] == 3  # augment_n_per_label
+    assert fields["n"] == "3"  # augment_n_per_label (stream stores string)
 
 
 # --- handle_relabel_task ---
@@ -297,6 +312,7 @@ def test_run_augment_workers_processes_label(tmp_path):
             cfg,
             run_id=run_id,
             expected_labels=1,
+            train_df=_train_df_for_augment(),
             progress=lambda evt: progress_events.append(evt),
         )
 
@@ -325,7 +341,12 @@ def test_augment_worker_skips_wrong_run_id(tmp_path):
         patch.object(augment_mod, "publish_event"),
         patch.object(augment_mod, "get_ollama_pool", return_value=pool),
     ):
-        run_augment_workers(cfg, run_id=run_id, expected_labels=0)
+        run_augment_workers(
+            cfg,
+            run_id=run_id,
+            expected_labels=0,
+            train_df=_train_df_for_augment(),
+        )
 
     mock_ack.assert_not_called()
     pool.generate.assert_not_called()
@@ -483,6 +504,11 @@ def test_augment_worker_acks_after_max_retries(tmp_path, monkeypatch):
         patch.object(augment_mod, "publish_event"),
         patch.object(augment_mod, "get_ollama_pool", return_value=pool),
     ):
-        run_augment_workers(cfg, run_id=run_id, expected_labels=1)
+        run_augment_workers(
+            cfg,
+            run_id=run_id,
+            expected_labels=1,
+            train_df=_train_df_for_augment(),
+        )
 
     mock_ack.assert_called_once_with("test:augment:tasks", f"augment-workers:{run_id}", "entry-1")

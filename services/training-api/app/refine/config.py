@@ -56,6 +56,15 @@ class RefineConfig:
     augment_n_per_label: int
     augment_max_parallel_labels: int
 
+    # Augmentation quality gates
+    augment_verify_labels: bool
+    augment_verify_min_confidence: float
+    augment_max_text_length: int
+    augment_seed_examples: int
+
+    # Promotion: allow small accuracy drop when within tolerance
+    promote_accuracy_tolerance: float
+
     # Ollama pool / routing controls
     ollama_urls: list[str]
     ollama_model: str
@@ -100,6 +109,34 @@ class RefineConfig:
             augment_n_per_label=_get_int("REFINER_AUGMENT_N_PER_LABEL", 3, min_value=1),
             augment_max_parallel_labels=_get_int(
                 "REFINER_AUGMENT_MAX_PARALLEL_LABELS", 4, min_value=1
+            ),
+            augment_verify_labels=_get_str(
+                "REFINER_AUGMENT_VERIFY_LABELS", "true"
+            ).lower()
+            in {"1", "true", "yes", "on"},
+            augment_verify_min_confidence=min(
+                1.0,
+                max(
+                    0.0,
+                    _get_float(
+                        "REFINER_AUGMENT_VERIFY_MIN_CONFIDENCE", 0.8, min_value=0.0
+                    ),
+                ),
+            ),
+            augment_max_text_length=_get_int(
+                "REFINER_AUGMENT_MAX_TEXT_LENGTH", 100, min_value=1
+            ),
+            augment_seed_examples=_get_int(
+                "REFINER_AUGMENT_SEED_EXAMPLES", 3, min_value=0
+            ),
+            promote_accuracy_tolerance=min(
+                1.0,
+                max(
+                    0.0,
+                    _get_float(
+                        "REFINER_PROMOTE_ACCURACY_TOLERANCE", 0.01, min_value=0.0
+                    ),
+                ),
             ),
             ollama_urls=urls,
             ollama_model=_get_str("OLLAMA_MODEL", "phi3:mini"),

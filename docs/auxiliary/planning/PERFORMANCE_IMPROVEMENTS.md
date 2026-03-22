@@ -47,7 +47,9 @@ augmentation) on Apple Silicon while keeping the project portable.
 ### Next
 
 1. Use phase-specific model configurations.
-2. Split easy generation from expensive validation.
+2. Split easy generation from expensive validation (partially addressed: augment
+   can run a second LLM pass for verification; see
+   [AUGMENTATION_QUALITY_IMPROVEMENTS.md](AUGMENTATION_QUALITY_IMPROVEMENTS.md)).
 3. Batch semantically similar items by label family.
 
 ### Later
@@ -139,6 +141,11 @@ Use `config/PROJECT_CONFIG.yaml` as the source of truth and generate
 - `REFINER_RELABEL_MAX_RETRIES`
 - `REFINER_AUGMENT_MAX_RETRIES`
 - `REFINER_AUGMENT_N_PER_LABEL`
+- `REFINER_AUGMENT_VERIFY_LABELS`
+- `REFINER_AUGMENT_VERIFY_MIN_CONFIDENCE`
+- `REFINER_AUGMENT_MAX_TEXT_LENGTH`
+- `REFINER_AUGMENT_SEED_EXAMPLES`
+- `REFINER_PROMOTE_ACCURACY_TOLERANCE`
 - `REFINER_LIMIT`
 
 ### Benchmark Controls
@@ -187,6 +194,12 @@ Track each applied change in this format:
 - Do not keep broad context windows for short classification tasks.
 - Do not accept free-form outputs when schema output is available.
 - Do not scale infra first when retries and token budgets are the bottleneck.
+
+## Augmentation Quality Reference
+
+- [AUGMENTATION_QUALITY_IMPROVEMENTS.md](AUGMENTATION_QUALITY_IMPROVEMENTS.md) -
+  Training-api seeding, verification, dedupe, class-weighted N, and promotion
+  tolerance.
 
 ## References
 

@@ -60,7 +60,7 @@ docker compose -f compose/docker-compose.yaml run --rm training-api train
 # Run refiner (Python runs services/refiner/app.py), then trainer on candidate
 docker compose -f compose/docker-compose.yaml --profile refine run --rm training-api refine
 
-# Require train_candidate.csv; compare metrics; if improved, copy to promote target
+# Require train_candidate.csv; compare metrics; promote if within tolerance
 docker compose -f compose/docker-compose.yaml run --rm training-api promote
 ```
 
@@ -76,6 +76,8 @@ container command so the entrypoint `python -m app.cli` receives the subcommand.
   `app/redis_client.py`).
 - **Promote:** The Promote button (UI) and `POST /refine/promote` (or CLI
   `training-api promote`) run synchronously; the gateway uses a longer timeout
-  (e.g. 5 min) for the promote proxy.
+  (e.g. 5 min) for the promote proxy. Promotion uses
+  `REFINER_PROMOTE_ACCURACY_TOLERANCE` and returns per-label recall deltas; see
+  `docs/auxiliary/planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md`.
 - **Security:** Run Snyk (code + SCA) on this service per project rules after
   adding or changing dependencies or the Dockerfile.

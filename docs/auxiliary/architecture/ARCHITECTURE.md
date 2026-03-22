@@ -256,7 +256,8 @@ See [REFINER_PLAN.md](../refiner/REFINER_PLAN.md),
     PUBLISH to Redis channel; GET .../events/{job_id} SUBSCRIBEs to channel and
     streams one SSE event to client then closes
   - POST /refine/promote: synchronous run_promote(), write promoted dataset to
-    mounted train.csv; return promoted flag and acc_before/acc_after
+    mounted train.csv; return promoted flag, acc_before/acc_after, tolerance
+    metadata, and per-label recall comparison
 - **Event-driven:** No polling; job completion notified via Redis Pub/Sub and
   SSE. See [TRAIN_AND_REFINE_GUI_PAGES_TECH.md](TRAIN_AND_REFINE_GUI_PAGES_TECH.md).
 
@@ -325,7 +326,8 @@ First message (completed|failed) -> client closes EventSource, renders result
 ```
 
 Promote is synchronous: POST /api/refine/promote -> gateway -> training-api
-run_promote() -> response with promoted, acc_before, acc_after.
+run_promote() -> response with promoted, acc_before, acc_after, tolerance fields,
+per_label_recall.
 
 ## 5. Routing Model
 

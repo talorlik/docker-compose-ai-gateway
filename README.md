@@ -13,7 +13,8 @@ the exact path taken (application-level tracing) per action.
 - **Trainer** (optional profile) trains the classifier and writes the model
   artifact
 - **Refiner** (optional profile) improves the dataset via local LLM (Ollama);
-  promotes only when metrics improve
+  promotes when retrained accuracy meets the configured tolerance versus the
+  previous model
 - **Redis** and **Training API** (refine profile) provide job state and HTTP
   endpoints for the Train/Refine UI; see `services/training-api/README.md`
   for env (REDIS_URL or REDIS_HOST/REDIS_PORT). Both run on the internal
@@ -93,6 +94,7 @@ Or use `./scripts/demo.sh run --dev`. See
 | [docs/auxiliary/planning/PROJECT_PLAN.md](docs/auxiliary/planning/PROJECT_PLAN.md) | Project overview and technical requirements |
 | [docs/auxiliary/planning/TASKS.md](docs/auxiliary/planning/TASKS.md) | Actionable implementation tasks |
 | [docs/auxiliary/planning/PERFORMANCE_IMPROVEMENTS.md](docs/auxiliary/planning/PERFORMANCE_IMPROVEMENTS.md) | Refinement performance tuning |
+| [docs/auxiliary/planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md](docs/auxiliary/planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md) | Augment quality gates and promotion tolerance |
 | [docs/auxiliary/refiner/REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md) | Refiner conceptual overview |
 | [docs/auxiliary/refiner/REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md) | Refiner technical specification |
 | [docs/auxiliary/refiner/REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md) | Refiner end-to-end flow |

@@ -61,7 +61,8 @@ row lookup without searching by text.
 ai-router. It processes misclassified rows, produces proposals, applies
 filters, and writes `train_candidate.csv`. Run refine and promote via
 **training-api** (UI or CLI) or `scripts/promote.sh`. **Promote to
-`train.csv` only if metrics improve**. See
+`train.csv` when retrained accuracy is at least as good as the baseline minus
+`REFINER_PROMOTE_ACCURACY_TOLERANCE`** (or when baseline accuracy is zero). See
 [TRAIN_AND_REFINE_GUI_PAGES_TECH.md](docs/auxiliary/architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md)
 for UI/CLI and event-driven flow.
 
@@ -91,8 +92,10 @@ network, validates JSON output, filters duplicates, and writes
 
 ### Safeguards
 
-- Proposals pass deterministic filters before merge
-- Only data that improves metrics is promoted to `train.csv`
+- Proposals pass deterministic filters before merge (including augment seeding,
+  verification, and dedupe in training-api; see
+  [AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md))
+- Only data that meets the promotion threshold is promoted to `train.csv`
 - Proposal files (`proposed_relabels.csv`, `proposed_examples.csv`) are
   kept for audit
 
@@ -206,6 +209,8 @@ during the refinement pipeline.
 ## 7. Cross-References
 
 - [REFINER_FLOW.md](REFINER_FLOW.md) - End-to-end flow
+- [AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md)
+Training-api augment and promote tuning
 - [METRICS_JSON.md](docs/auxiliary/reference/METRICS_JSON.md) - metrics.json purpose
 and usage
 - [REFINER_TECHNICAL.md](REFINER_TECHNICAL.md) - Technical specification

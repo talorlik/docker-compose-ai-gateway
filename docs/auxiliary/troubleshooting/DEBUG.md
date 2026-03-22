@@ -186,14 +186,18 @@ Augment:
   - Completion event looks like: `{"status":"completed","result":{...}}`.
   - Final `result` includes keys:
     `run_id`, `labels`, `train_augment_candidate_rows`, `metrics_before`,
-    `metrics_after`, `proposed_examples`.
+    `metrics_after`, `proposed_examples`, and often `label_counts` (per-label
+    synthetic row targets for the run).
 
 Promote:
 
 - `POST /api/refine/promote` returns at least:
   `{"promoted": true|false, "message": "...",`
-  `"acc_before": <float>, "acc_after": <float>}`
-  (exact shape can vary on errors).
+  `"acc_before": <float>, "acc_after": <float>,`
+  `"promote_accuracy_tolerance": <float>,`
+  `"used_tolerance": <bool>,`
+  `"per_label_recall": {"<label>": {"recall_before", "recall_after", "delta"}}}`
+  (exact shape can vary on errors; tolerance fields support debugging).
 
 ### Relabel: API start response
 
@@ -570,6 +574,8 @@ fi
 RUN_ID="PASTE_RUN_ID"
 docker compose -f "$COMPOSE_FILE" exec -T training-api sh -lc "
 cat /model/refine_runs/$RUN_ID/augment/merge_augment.validation.json | head -n 200
+# Expects counts: input_rows_count, accepted_rows_count, invalid_rows_count,
+# duplicate_existing_count, fuzzy_duplicate_count
 "
 ```
 
@@ -692,9 +698,12 @@ For relabel:
 
 For augment:
 
-1. Inspect `augment.label_*.validation.json` and
+1. Inspect `augment.label_*.validation.json` (check `verified_count`,
+   `verification_rejected_count` when verification is on) and
    `augment.label_*.rejected_items.csv`.
-2. Inspect `merge_augment.validation.json`.
+2. Inspect `merge_augment.validation.json` (including `fuzzy_duplicate_count`).
+3. Confirm `train.csv` has enough rows per label for seeds when using
+   `REFINER_AUGMENT_SEED_EXAMPLES`.
 
 ### "Job appears stuck"
 

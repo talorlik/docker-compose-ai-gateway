@@ -147,16 +147,23 @@ The refiner uses metrics.json for:
 - **Confusion patterns**: if `confusion(A,B) > 10`, generate contrastive
   examples for the true label A
 
-Promotion logic (when a candidate model finishes training):
+Promotion logic (training-api `run_promote`, when a candidate model finishes
+training on `train_candidate.csv`):
 
 ```text
-if candidate_macro_f1 > previous_macro_f1:
+tolerance = REFINER_PROMOTE_ACCURACY_TOLERANCE  # e.g. 0.01
+if previous_accuracy == 0 or candidate_accuracy >= previous_accuracy - tolerance:
     promote model.joblib
 else:
     discard candidate
 ```
 
-This prevents bad synthetic data from degrading the model.
+The promote response includes `per_label_recall` (before, after, delta) for each
+label in `classification_report` so you can see trade-offs when aggregate
+accuracy moves slightly.
+
+This reduces the chance that a small accuracy dip blocks promotion when recall
+on weak classes improved, while still rejecting large regressions.
 
 ## Practical Usage During Development
 
@@ -194,4 +201,5 @@ The refiner uses `metrics.json` to identify weak labels and confusion patterns,
 and to decide whether to promote a candidate model. See
 [REFINER_PLAN.md](docs/auxiliary/refiner/REFINER_PLAN.md),
 [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md),
-[REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md).
+[REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md),
+[AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md).

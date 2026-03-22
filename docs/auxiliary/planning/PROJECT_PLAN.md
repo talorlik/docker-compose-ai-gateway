@@ -863,7 +863,8 @@ services:
 2. Run the trainer (no rebuild needed):
    `docker compose --profile train run --rm trainer`.
 3. Optionally run the refiner: `docker compose --profile refine run --rm refiner`;
-   then `./scripts/promote.sh` to promote only if metrics improve.
+   then `./scripts/promote.sh` to promote when the training-api promotion
+   threshold is met (see `REFINER_PROMOTE_ACCURACY_TOLERANCE`).
 4. Restart ai-router: `docker compose restart ai_router`.
 5. Rebuild the trainer image only when `train.py` or `requirements.txt`
    change; `train.csv` is mounted at runtime.

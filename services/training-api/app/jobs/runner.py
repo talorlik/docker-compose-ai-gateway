@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 RUN_TRAIN_TIMEOUT_SECONDS = int(os.environ.get("RUN_TRAIN_TIMEOUT_SECONDS", "3600"))
 RUN_REFINE_TIMEOUT_SECONDS = int(os.environ.get("RUN_REFINE_TIMEOUT_SECONDS", "600"))
@@ -388,6 +391,39 @@ def _read_metrics_only(path: str) -> dict[str, Any]:
         return {}
 
 
+def _per_label_recall_delta(
+    metrics_before: dict[str, Any], metrics_after: dict[str, Any]
+) -> dict[str, dict[str, float | None]]:
+    """Compare per-label recall between two sklearn classification_report payloads."""
+    rb = metrics_before.get("classification_report") or {}
+    ra = metrics_after.get("classification_report") or {}
+    skip = {"accuracy", "macro avg", "weighted avg"}
+    labels = (
+        set(rb) | set(ra)
+    ) - skip
+    out: dict[str, dict[str, float | None]] = {}
+    for lab in sorted(labels):
+        b_ent = rb.get(lab) if isinstance(rb.get(lab), dict) else None
+        a_ent = ra.get(lab) if isinstance(ra.get(lab), dict) else None
+        b_rec = b_ent.get("recall") if b_ent else None
+        a_rec = a_ent.get("recall") if a_ent else None
+        try:
+            bf = float(b_rec) if b_rec is not None else None
+        except (TypeError, ValueError):
+            bf = None
+        try:
+            af = float(a_rec) if a_rec is not None else None
+        except (TypeError, ValueError):
+            af = None
+        delta = None if bf is None or af is None else af - bf
+        out[lab] = {
+            "recall_before": bf,
+            "recall_after": af,
+            "delta": delta,
+        }
+    return out
+
+
 def _run_trainer_on_candidate(
     work_dir: str,
     artifacts_dir: str,
@@ -573,7 +609,8 @@ def run_promote(
         timeout_seconds: Timeout for trainer run.
 
     Returns:
-        Dict with promoted (bool), message (str), acc_before (float), acc_after (float).
+        Dict with promoted (bool), message (str), acc_before (float), acc_after (float),
+        promote_accuracy_tolerance, used_tolerance, per_label_recall (when metrics exist).
         Caller may return 400 if train_candidate missing; 200 with promoted: false if no improvement.
     """
     artifacts_dir = _validate_dir_under_allowed(
@@ -609,7 +646,30 @@ def run_promote(
         metrics_after = json.load(f)
     acc_after = float(metrics_after.get("accuracy") or 0.0)
 
-    if acc_before == 0 or acc_after > acc_before:
+    tolerance = float(os.environ.get("REFINER_PROMOTE_ACCURACY_TOLERANCE", "0.01"))
+    promote_ok = acc_before == 0 or acc_after >= acc_before - tolerance
+
+    recall_comparison = _per_label_recall_delta(metrics_before, metrics_after)
+    used_tolerance = (
+        acc_before > 0 and acc_after < acc_before and acc_after >= acc_before - tolerance
+    )
+    if used_tolerance:
+        logger.info(
+            "Promote within accuracy tolerance: before=%.4f after=%.4f tolerance=%.4f",
+            acc_before,
+            acc_after,
+            tolerance,
+        )
+        for lab, row in recall_comparison.items():
+            logger.info(
+                "Per-label recall %s: before=%s after=%s delta=%s",
+                lab,
+                row.get("recall_before"),
+                row.get("recall_after"),
+                row.get("delta"),
+            )
+
+    if promote_ok:
         # Promote: copy train_candidate to promote target as train.csv
         os.makedirs(promote_dir, exist_ok=True)
         dest_train = _safe_file_under_dir(promote_dir, "train.csv")
@@ -622,16 +682,32 @@ def run_promote(
         metrics_final = _safe_file_under_dir(artifacts_dir, "metrics.json")
         with open(metrics_final, "w", encoding="utf-8") as f:
             json.dump(metrics_after, f, indent=2)
+        msg = f"Promoted. Accuracy {acc_before:.4f} -> {acc_after:.4f}."
+        if used_tolerance:
+            msg = (
+                f"Promoted within tolerance ({tolerance:.4f}). "
+                f"Accuracy {acc_before:.4f} -> {acc_after:.4f}."
+            )
         return {
             "promoted": True,
-            "message": f"Promoted. Accuracy {acc_before:.4f} -> {acc_after:.4f}.",
+            "message": msg,
             "acc_before": acc_before,
             "acc_after": acc_after,
+            "promote_accuracy_tolerance": tolerance,
+            "used_tolerance": used_tolerance,
+            "per_label_recall": recall_comparison,
         }
 
     return {
         "promoted": False,
-        "message": f"Metrics did not improve ({acc_before:.4f} -> {acc_after:.4f}). Candidate discarded.",
+        "message": (
+            f"Metrics did not improve ({acc_before:.4f} -> {acc_after:.4f}); "
+            f"threshold with tolerance {tolerance:.4f} is {acc_before - tolerance:.4f}. "
+            "Candidate discarded."
+        ),
         "acc_before": acc_before,
         "acc_after": acc_after,
+        "promote_accuracy_tolerance": tolerance,
+        "used_tolerance": False,
+        "per_label_recall": recall_comparison,
     }

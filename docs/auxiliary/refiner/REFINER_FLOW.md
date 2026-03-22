@@ -61,7 +61,8 @@ REFINER_TECHNICAL, REFINER_PRD, and METRICS_JSON specifications.
                                   |
                     +-------------+-------------+
                     |                           |
-              metrics improved             metrics worse
+        accuracy improved or within      below threshold
+        tolerance (see below)              (discard)
                     |                           |
                     v                           v
              train.csv updated            discard candidate
@@ -115,6 +116,8 @@ REFINER_TECHNICAL, REFINER_PRD, and METRICS_JSON specifications.
      - `refine_runs/<run_id>/augment/proposed_examples.csv`
      - `refine_runs/<run_id>/augment/train_augment_candidate.csv`
      - `refine_runs/<run_id>/augment/metrics_augment_candidate.json`
+     - Per-label outputs under `refine_runs/<run_id>/augment/labels/` (raw LLM
+       output, prompts, validation JSON, optional rejected rows)
 
 ### Phase 3: Promote
 
@@ -127,10 +130,13 @@ REFINER_TECHNICAL, REFINER_PRD, and METRICS_JSON specifications.
 3. **Promote sub-steps**:
    - Retrain with train_candidate.csv (produces model_candidate.joblib,
      metrics_candidate.json)
-   - Compare accuracy: metrics_candidate vs metrics_before
-   - **If improved**: copy train_candidate.csv to train.csv (host), copy
-     model_candidate.joblib to model.joblib, update metrics.json
-   - **If not improved**: discard candidate; train.csv and model.joblib
+   - Compare accuracy: metrics_candidate vs metrics_before using
+     `REFINER_PROMOTE_ACCURACY_TOLERANCE` (promote when
+     `acc_after >= acc_before - tolerance`, or when `acc_before` is zero)
+   - **If promoted**: copy train_candidate.csv to train.csv (host), copy
+     model_candidate.joblib to model.joblib, update metrics.json. The JSON
+     response includes per-label recall deltas for debugging.
+   - **If not promoted**: discard candidate; train.csv and model.joblib
      unchanged
 
 4. **Post-promote**: Restart ai_router to load new model (if promoted)
@@ -146,7 +152,7 @@ docker compose -f compose/docker-compose.yaml --profile train run --rm trainer
 # - POST /refine/relabel
 # - POST /refine/augment
 
-# 3. Promote only if metrics improve
+# 3. Promote when accuracy improves or stays within tolerance
 ./scripts/promote.sh
 
 # 4. If promoted, restart ai_router
@@ -178,21 +184,28 @@ Or via demo.sh:
 
 | Decision | Condition | Action |
 | -------- | --------- | ------ |
-| Labels to augment | Weak labels from metrics (low recall) and/or configured selection | Generate `REFINER_AUGMENT_N_PER_LABEL` examples per label |
-| Promote candidate | candidate_accuracy > previous_accuracy | Copy to train.csv, promote model |
-| Discard candidate | candidate_accuracy <= previous_accuracy | Keep train.csv and model.joblib |
+| Labels to augment | Weak labels from metrics (recall < 0.75 or all labels if metrics missing) | Per-label N: base `REFINER_AUGMENT_N_PER_LABEL`, scaled up for rarer classes (capped at 3x base) |
+| Promote candidate | `acc_after >= acc_before - REFINER_PROMOTE_ACCURACY_TOLERANCE` (or `acc_before == 0`) | Copy to train.csv, promote model |
+| Discard candidate | candidate accuracy below threshold | Keep train.csv and model.joblib |
+
+Augmentation uses seed examples from `train.csv`, optional verification
+(`REFINER_AUGMENT_VERIFY_LABELS`), length limits, and fuzzy dedupe at merge.
+See [AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md).
 
 ## 6. Final train.csv Contents (When Promoted)
 
 1. **Post-refined original content**: Relabels applied to misclassified rows
-2. **Additional synthetic examples per label**: Min 5 per label that needed
-   improvement (from misclassified, weak recall, or confusion patterns);
-   labels with >= 150 existing rows skip augmentation entirely
+2. **Additional synthetic examples**: Generated per weak label with quality
+   gates (seeded prompts, verification, dedupe). The legacy standalone refiner
+   used a 150-row skip threshold; **training-api** augment does not apply that
+   rule and instead uses class-weighted counts and filters above.
 
 ## 7. Cross-References
 
 - [REFINER_PLAN.md](REFINER_PLAN.md) - Conceptual overview
 - [REFINER_TECHNICAL.md](REFINER_TECHNICAL.md) - Technical specification
 - [REFINER_PRD.md](REFINER_PRD.md) - Requirements
+- [AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md)
+Training-api augment and promote tuning
 - [METRICS_JSON.md](docs/auxiliary/reference/METRICS_JSON.md) - metrics.json
 purpose and usage

@@ -93,4 +93,7 @@ See [REFINER_PRD.md](docs/auxiliary/refiner/REFINER_PRD.md) for refiner
 acceptance criteria.
 Verification: `docker compose --profile refine run --rm refiner` succeeds when
 `misclassified.csv` exists and Ollama is healthy; proposal files and
-`train_candidate.csv` are produced; promote only when metrics improve.
+`train_candidate.csv` are produced; promote when training-api criteria are met
+(accuracy within `REFINER_PROMOTE_ACCURACY_TOLERANCE` of the baseline, or zero
+baseline accuracy). See
+[AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md).

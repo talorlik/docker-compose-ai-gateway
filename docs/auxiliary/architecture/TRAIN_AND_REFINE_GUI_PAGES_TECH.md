@@ -177,7 +177,7 @@ flowchart LR
 | GET | /refine/relabel/events/{job_id} | SSE: SUBSCRIBE to job:refine:relabel:events:{job_id}; stream messages until completed/failed; close |
 | POST | /refine/augment | Create job; background augment run; return `{ "job_id", "run_id" }` |
 | GET | /refine/augment/events/{job_id} | SSE: SUBSCRIBE to job:refine:augment:events:{job_id}; stream messages until completed/failed; close |
-| POST | /refine/promote | Synchronous run_promote(); body `{ "run_id": "..." }` optional. Return `{ "promoted", "message", "acc_before", "acc_after" }`; 400 if candidate missing; 200 with promoted: false if metrics did not improve |
+| POST | /refine/promote | Synchronous run_promote(); body `{ "run_id": "..." }` optional. Return `{ "promoted", "message", "acc_before", "acc_after", "promote_accuracy_tolerance", "used_tolerance", "per_label_recall" }`; 400 if candidate missing; 200 with promoted: false if accuracy is below `acc_before - tolerance` (unless baseline accuracy was zero) |
 
 ### 4.4 Background Job Behavior
 
@@ -254,8 +254,9 @@ flowchart LR
   page; side-by-side or one table with Before/After columns.
 - **Promote:** Button POSTs to /api/refine/promote; show loading (promotion may
   take several minutes). On success show "Promoted" with acc_before/acc_after or
-  "Metrics did not improve; candidate discarded"; optionally remind to restart
-  ai_router. On error (e.g. train_candidate missing) show message.
+  a tolerance message when `used_tolerance` is true; or "Metrics did not
+  improve; candidate discarded" when below threshold; optionally remind to
+  restart ai_router. On error (e.g. train_candidate missing) show message.
 - **Tabulated data:** Proposed relabels table, proposed examples table, train
   candidate table (sample or full with pagination if large).
 
@@ -310,12 +311,22 @@ flowchart LR
   "promoted": true,
   "message": "...",
   "acc_before": 0.88,
-  "acc_after": 0.92
+  "acc_after": 0.92,
+  "promote_accuracy_tolerance": 0.01,
+  "used_tolerance": false,
+  "per_label_recall": {
+    "search": {
+      "recall_before": 0.88,
+      "recall_after": 0.89,
+      "delta": 0.01
+    }
+  }
 }
 ```
 
-- 400 if train_candidate missing; 200 with promoted: false if metrics did not
-  improve.
+- 400 if train_candidate missing; 200 with promoted: false if candidate
+  accuracy is below `acc_before - promote_accuracy_tolerance` (unless baseline
+  accuracy was zero).
 
 ## 8. Docker Compose and Volumes
 <!-- Tasks: B1 B7 -->

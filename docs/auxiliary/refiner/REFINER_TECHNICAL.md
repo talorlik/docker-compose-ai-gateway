@@ -288,9 +288,10 @@ docker compose -f compose/docker-compose.yaml restart ai_router
 
 ## 9. Promotion Rule
 
-- Promote only when `metrics.json` improves (accuracy, `unknown` recall,
-  confusion pairs).
-- Do not replace `model.joblib` blindly.
+- **Training-api:** Promote when candidate accuracy is at least
+  `previous_accuracy - REFINER_PROMOTE_ACCURACY_TOLERANCE`, or when baseline
+  accuracy is zero. See [AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md).
+- Do not replace `model.joblib` blindly outside that contract.
 - Threshold logic (`T_ROUTE`, `T_MARGIN`) remains in gateway; refinement
   improves the model, thresholds control routing policy.
 

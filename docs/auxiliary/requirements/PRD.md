@@ -76,7 +76,7 @@ system with AI-driven request routing and application-level tracing.
 | FR-083 | The ai-router MAY expose `POST /reload-model` for hot-reload of the model without container restart. | Should |
 | FR-084 | A **refiner** service SHALL improve the training dataset by analyzing misclassified rows via a local LLM (Ollama). | Must |
 | FR-085 | The refiner SHALL run on demand via `docker compose --profile refine run --rm refiner`; it SHALL NOT start with default `docker compose up`. | Must |
-| FR-086 | The refiner SHALL produce `train_candidate.csv`; promotion to `train.csv` SHALL occur only when retraining improves metrics (via `scripts/promote.sh`). | Must |
+| FR-086 | The refiner SHALL produce `train_candidate.csv`; promotion to `train.csv` SHALL occur when retraining meets the training-api promotion policy (including `REFINER_PROMOTE_ACCURACY_TOLERANCE`; via `scripts/promote.sh` or UI). | Must |
 
 See [REFINER_PRD.md](docs/auxiliary/refiner/REFINER_PRD.md) for full refiner
 requirements.

@@ -81,8 +81,17 @@ Schema:
 """
 
 
-def augment_examples(label: str, n: int) -> str:
+def augment_examples(label: str, n: int, seed_examples: list[str]) -> str:
     labels_str = ", ".join(LABELS)
+    seeds_block = ""
+    if seed_examples:
+        seeds_json = json.dumps(seed_examples, ensure_ascii=False)
+        seeds_block = f"""
+## SEED EXAMPLES (REAL DATA)
+These are real user prompts from the training set for intent \"{label}\":
+{seeds_json}
+
+"""
     return f"""# Generate Synthetic Examples
 
 ## ROLE
@@ -91,11 +100,11 @@ You are a data augmentation assistant for an intent classification dataset.
 ## GOAL
 Generate {n} synthetic user prompts that would correctly be classified as
 \"{label}\".
-
-## TASK
-1. Generate {n} diverse, realistic user prompts (short queries or commands)
-2. Each example should be clearly classifiable as {label}
-3. Vary phrasing, length, and style
+{seeds_block}## TASK
+1. Generate {n} realistic user prompts (short queries or commands) that match
+   the \"{label}\" intent.
+2. {"Paraphrase and vary these seed examples: vary phrasing, length, and style while preserving the same intent." if seed_examples else "Vary phrasing, length, and style."}
+3. Each output row must be clearly classifiable as \"{label}\".
 
 ## OUTPUT
 Respond with valid JSON only, as an array.
@@ -104,6 +113,7 @@ Schema: [{{\"text\":\"<prompt>\",\"label\":\"{label}\"}}, ...]
 
 ## GUARDRAILS
 - label must be one of: {labels_str}
+- Each object's label must be exactly \"{label}\" (the target intent for this task).
 - text should be short (max ~100 chars) with no newlines
 - output must be a JSON array only, no extra text
 """

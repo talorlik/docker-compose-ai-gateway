@@ -455,9 +455,10 @@ artifact in the image or loaded from a volume.
 
 **Refiner workflow:** After training, run the refiner to analyze
 `misclassified.csv` and produce `train_candidate.csv`; then run
-`scripts/promote.sh` to promote only if metrics improve. See
-[REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md) and
-[REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md).
+`scripts/promote.sh` to promote when accuracy is within tolerance of the
+baseline. See [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md),
+[AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md),
+and [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md).
 
 ## 8. Explanation Token Extraction
 <!-- TASKS: 2.5 -->
@@ -1682,4 +1683,6 @@ separately. See:
 - [REFINER_TECHNICAL.md](docs/auxiliary/refiner/REFINER_TECHNICAL.md) - Technical
 specification
 - [REFINER_FLOW.md](docs/auxiliary/refiner/REFINER_FLOW.md) - End-to-end flow
+- [AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md)
+Augment quality and promotion tolerance
 - [REFINER_TASKS.md](docs/auxiliary/refiner/REFINER_TASKS.md) - Implementation tasks

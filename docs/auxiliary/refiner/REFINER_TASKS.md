@@ -97,7 +97,7 @@ Produce `proposed_examples.csv` for underperforming classes.
 | 7.1 | Detect underperforming classes from `metrics.json` or confusion matrix; or use misclassified `true_label` distribution. | Identify classes needing more examples. | x |
 | 7.2 | Design augmentation prompt: generate N examples for a given label; output JSON array of `{text, label}`. | LLM produces synthetic examples. | x |
 | 7.3 | Write `proposed_examples.csv` with columns: `text`, `label`, `source_pattern`, `generator_model`. | REF-FR-009 satisfied. | x |
-| 7.4 | Apply filters to augmentation output: deduplicate, min length, exclude if already in `train.csv`. | Augmentation candidates pass same filters as relabels. | x |
+| 7.4 | Apply filters to augmentation output: deduplicate (exact + fuzzy), min/max length, label match, optional verify pass, exclude if already in `train.csv`. | Training-api augment; see [AUGMENTATION_QUALITY_IMPROVEMENTS.md](../planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md). | x |
 
 ## Batch 8: Report and Polish
 
