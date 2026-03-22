@@ -152,7 +152,9 @@ Commands:
   run [--dev] [--scale N]  Start the stack with selected Ollama mode.
   start                 Alias for run
   stop                  Stop the stack (containers remain)
+  restart               Stop + start the stack
   delete                Remove containers, networks, and volumes
+  reset                 Stop + delete + start (full teardown and rebuild)
   curl                  Run curl examples (search, image, ops, unknown)
   scaling               Demo load distribution (scale search_service=3, run load test)
   scale N               Scale search_service to N replicas
@@ -239,6 +241,17 @@ cmd_delete() {
   cd "$COMPOSE_DIR"
   docker compose -f "$COMPOSE_FILE" --profile refine --profile refine-container down -v
   echo "Containers, networks, and volumes removed."
+}
+
+cmd_restart() {
+  cmd_stop
+  cmd_run "$@"
+}
+
+cmd_reset() {
+  cmd_stop
+  cmd_delete
+  cmd_run "$@"
 }
 
 cmd_curl() {
@@ -426,8 +439,14 @@ main() {
     stop)
       cmd_stop
       ;;
+    restart)
+      cmd_restart "$@"
+      ;;
     delete)
       cmd_delete
+      ;;
+    reset)
+      cmd_reset "$@"
       ;;
     curl)
       cmd_curl

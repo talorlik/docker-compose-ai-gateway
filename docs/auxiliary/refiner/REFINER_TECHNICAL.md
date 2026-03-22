@@ -211,7 +211,16 @@ services/refiner/
   Dockerfile
   requirements.txt
   app.py
+  prompts.py
 ```
+
+> [!NOTE]
+> The legacy `services/refiner/` container runs a single-phase
+> refinement. The two-phase relabel/augment pipeline now lives
+> in `services/training-api/app/refine/` with a shared JSON
+> parser (`parser.py`) used by both `relabel.py` and
+> `augment.py`. See [REFINER_FLOW.md](REFINER_FLOW.md) for
+> the current end-to-end flow.
 
 ### 7.2 Dependencies
 

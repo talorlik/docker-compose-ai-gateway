@@ -1082,15 +1082,24 @@ Static files live in `services/gateway/app/static/`:
 
 ```text
 services/gateway/app/static/
-  index.html
-  app.js
-  styles.css
+  base.css          # shared base styles
+  index.html        # query page (default)
+  query.js          # query page logic
+  query.css         # query page styles
+  train.html        # train page
+  train.js          # train page logic
+  train.css         # train page styles
+  refine.html       # refine page
+  refine.js         # refine page logic
+  refine.css        # refine page styles
+  utils.js          # shared utilities (escapeHtml, buildMetricsDOM)
 ```
 
 Mount `/static` before defining API routes so asset requests
-(`/static/app.js`, `/static/styles.css`) are served directly.
-The `GET /` route returns `index.html` which loads the JS and CSS
-from `/static/`.
+are served directly. The `GET /` route returns `index.html`
+(query page); `train.html` and `refine.html` are served at
+their respective paths. `utils.js` is shared by both the
+train and refine pages for metrics rendering.
 
 ### 14.6 `/routes` Endpoint
 
@@ -1301,11 +1310,20 @@ uvicorn `--reload` watches for file changes and restarts the worker.
 
 ### 17.1 File Structure
 
-Three static files in `services/gateway/app/static/`:
+Static files in `services/gateway/app/static/`:
 
-- `index.html` - page layout, input form, result display areas.
-- `app.js` - fetch logic, trace rendering, hop diagram.
-- `styles.css` - layout and visual theme.
+- `index.html` - query page layout, input form, result display.
+- `query.js` - query fetch logic, trace rendering, hop diagram.
+- `query.css` - query page styles.
+- `train.html` - train page layout and metrics display.
+- `train.js` - train trigger and metrics rendering.
+- `train.css` - train page styles.
+- `refine.html` - refine page (relabel, augment, promote).
+- `refine.js` - refine trigger and comparison rendering.
+- `refine.css` - refine page styles.
+- `base.css` - shared base styles across all pages.
+- `utils.js` - shared utilities (`escapeHtml`, `buildMetricsDOM`)
+  used by both train and refine pages.
 
 ### 17.2 Core JavaScript
 

@@ -52,11 +52,14 @@ defined in `OLLAMA_MODE`:
 The `scripts/demo.sh` script is the primary control plane for local operations.
 
 - **Start Stack**: `./scripts/demo.sh run [--dev]` (uses dev overlay for reload)
-- **Stop/Teardown**: `./scripts/demo.sh stop` or `delete`
+- **Stop/Teardown**: `./scripts/demo.sh stop`, `restart`, `delete`,
+  or `reset` (full teardown and rebuild)
 - **Testing**: `./scripts/demo.sh test [all|gateway|ai_router]` or raw `pytest`
 - **Train Route**: `./scripts/demo.sh train`
 - **Refiner Route**: `./scripts/demo.sh refine` (runs relabel & augment),
   followed by `./scripts/demo.sh promote` (promotes candidate if better).
+- **Standalone refine**: `scripts/refine_relabel.sh` and
+  `scripts/refine_augment.sh` for running phases outside `demo.sh`.
 - **Other utilities**: `logs`, `scaling`, `failure`, `curl`, `load-test`.
 
 ## Technical Policies for Agents

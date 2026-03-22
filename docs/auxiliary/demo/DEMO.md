@@ -150,6 +150,8 @@ All values are defined in `config/PROJECT_CONFIG.yaml` and rendered to
 | `REFINER_RELABEL_MAX_PARALLEL_BATCHES` | `1` | Relabel worker parallelism |
 | `REFINER_AUGMENT_N_PER_LABEL` | `3` | Aug examples per selected label |
 | `REFINER_AUGMENT_MAX_PARALLEL_LABELS` | `1` | Augment label parallelism |
+| `REFINER_RELABEL_MAX_RETRIES` | `3` | Max retries per relabel batch |
+| `REFINER_AUGMENT_MAX_RETRIES` | `3` | Max retries per augment label |
 | `REFINER_LIMIT` | `5` | Max misclassified rows for relabel phase |
 | `DEMO_START_BACKEND` | `true` | Let `demo.sh` start selected backend |
 | `DEMO_RUN_RELABEL` | `true` | Enable relabel phase in `demo.sh refine` |
@@ -218,12 +220,22 @@ All values are defined in `config/PROJECT_CONFIG.yaml` and rendered to
 ./scripts/demo.sh promote
 ```
 
-### Stop / Delete
+### Stop / Restart / Delete / Reset
 
 ```bash
 ./scripts/demo.sh stop
+./scripts/demo.sh restart
+./scripts/demo.sh restart --dev
 ./scripts/demo.sh delete
+./scripts/demo.sh reset
 ```
+
+- `stop` - stop the stack (containers remain).
+- `restart` - stop + start. Accepts the same flags as `run`
+  (`--dev`, `--scale N`).
+- `delete` - remove containers, networks, and volumes.
+- `reset` - stop + delete + start (full teardown and rebuild).
+  Accepts the same flags as `run`.
 
 ## Demo Prompt Examples
 

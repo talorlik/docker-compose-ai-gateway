@@ -65,7 +65,8 @@ external observability dependencies.
 compose/          # docker-compose.yaml (base), docker-compose.dev.yaml
 services/         # gateway, ai_router, search_service, image_service,
                   # ops_service, trainer, refiner, training-api
-scripts/          # demo.sh, load_test.sh, promote.sh
+scripts/          # demo.sh, load_test.sh, promote.sh,
+                  # refine_relabel.sh, refine_augment.sh, generate_env.py
 docs/auxiliary/   # architecture, demo, planning, refiner, requirements
 ```
 

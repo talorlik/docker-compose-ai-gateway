@@ -34,10 +34,23 @@ Stop containers (keeps volumes).
 ./scripts/demo.sh stop
 ```
 
+Restart the stack (stop + start, accepts `--dev` and `--scale N`).
+
+```bash
+./scripts/demo.sh restart
+```
+
 Delete everything (containers, networks, volumes).
 
 ```bash
 ./scripts/demo.sh delete
+```
+
+Full teardown and rebuild (stop + delete + start,
+accepts same flags as `run`).
+
+```bash
+./scripts/demo.sh reset
 ```
 
 ## Sanity Checks

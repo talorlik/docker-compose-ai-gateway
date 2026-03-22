@@ -204,9 +204,17 @@ docker-compose-ai-gateway/
 │   │   ├── app/
 │   │   │   ├── main.py
 │   │   │   └── static/
+│   │   │       ├── base.css
 │   │   │       ├── index.html
-│   │   │       ├── app.js
-│   │   │       └── styles.css
+│   │   │       ├── query.js
+│   │   │       ├── query.css
+│   │   │       ├── train.html
+│   │   │       ├── train.js
+│   │   │       ├── train.css
+│   │   │       ├── refine.html
+│   │   │       ├── refine.js
+│   │   │       ├── refine.css
+│   │   │       └── utils.js
 │   │   └── tests/
 │   ├── ai_router/
 │   │   ├── Dockerfile
@@ -231,15 +239,41 @@ docker-compose-ai-gateway/
 │   │   ├── requirements.txt
 │   │   └── app/
 │   │       └── main.py
-│   └── trainer/
+│   ├── trainer/
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   ├── train.py
+│   │   └── train.csv
+│   ├── refiner/
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   ├── app.py
+│   │   └── prompts.py
+│   └── training-api/
 │       ├── Dockerfile
 │       ├── requirements.txt
-│       ├── train.py
-│       └── train.csv
+│       ├── app/
+│       │   ├── cli.py
+│       │   ├── main.py
+│       │   ├── redis_client.py
+│       │   ├── jobs/
+│       │   │   └── runner.py
+│       │   └── refine/
+│       │       ├── augment.py
+│       │       ├── config.py
+│       │       ├── ollama_pool.py
+│       │       ├── parser.py
+│       │       ├── prompts.py
+│       │       ├── relabel.py
+│       │       └── training.py
+│       └── tests/
 ├── scripts/
 │   ├── demo.sh                      # Full demo sequence
-│   └── load_test.sh                 # Load testing script
-│   └── generate_env.py              # Generate env/.env.<env> from PROJECT_CONFIG.yaml
+│   ├── load_test.sh                 # Load testing script
+│   ├── generate_env.py              # Generate env/.env.<env> from PROJECT_CONFIG.yaml
+│   ├── promote.sh                   # Promote candidate model
+│   ├── refine_relabel.sh            # Run relabel phase standalone
+│   └── refine_augment.sh            # Run augment phase standalone
 └── docs/
     └── auxiliary/
         ├── architecture/            # ARCHITECTURE.md, TECHNICAL.md
