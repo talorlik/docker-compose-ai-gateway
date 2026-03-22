@@ -2,7 +2,9 @@
   "use strict";
 
   const relabelRunBtn = document.getElementById("relabel-run-btn");
+  const relabelLastBtn = document.getElementById("relabel-last-btn");
   const augmentRunBtn = document.getElementById("augment-run-btn");
+  const augmentLastBtn = document.getElementById("augment-last-btn");
   const refinePromoteBtn = document.getElementById("refine-promote-btn");
   const refinePromoteActions = document.getElementById("refine-promote-actions");
   const refineProgress = document.getElementById("refine-progress");
@@ -17,7 +19,9 @@
 
   function setRefineRunning(running) {
     relabelRunBtn.disabled = running;
+    relabelLastBtn.disabled = running;
     augmentRunBtn.disabled = running;
+    augmentLastBtn.disabled = running;
     refinePromoteBtn.disabled = running;
     if (running) {
       refineProgress.classList.remove("hidden");
@@ -34,7 +38,9 @@
   function setRefinePromoting(promoting) {
     refinePromoteBtn.disabled = promoting;
     relabelRunBtn.disabled = promoting;
+    relabelLastBtn.disabled = promoting;
     augmentRunBtn.disabled = promoting;
+    augmentLastBtn.disabled = promoting;
     if (promoting) {
       refineProgress.classList.remove("hidden");
       refineProgress.querySelector(".progress-label").textContent = "Promoting...";
@@ -240,6 +246,45 @@
   augmentRunBtn.addEventListener("click", async () => {
     if (augmentRunBtn.disabled) return;
     await runPhase("augment");
+  });
+
+  async function loadLastPhase(phase) {
+    var btn = phase === "relabel" ? relabelLastBtn : augmentLastBtn;
+    var endpoint = phase === "relabel" ? "/api/refine/relabel/last" : "/api/refine/augment/last";
+    var label = phase === "relabel" ? "relabeling" : "augmentation";
+    if (btn.disabled) return;
+    btn.disabled = true;
+    refineMessage.classList.add("hidden");
+    refineReport.classList.add("hidden");
+    refineComparison.classList.add("hidden");
+    refineTables.classList.add("hidden");
+    if (refinePromoteActions) refinePromoteActions.classList.add("hidden");
+    try {
+      var resp = await fetch(endpoint);
+      if (resp.status === 404) {
+        showRefineMessage("No previous " + label + " run found.", "info");
+        return;
+      }
+      if (!resp.ok) {
+        showRefineError("Load last " + label + " failed: " + resp.status);
+        return;
+      }
+      var result = await resp.json();
+      lastRunId = result.run_id || null;
+      renderRefineResult(result);
+    } catch (err) {
+      showRefineError(err.message || "Network error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  relabelLastBtn.addEventListener("click", function () {
+    loadLastPhase("relabel");
+  });
+
+  augmentLastBtn.addEventListener("click", function () {
+    loadLastPhase("augment");
   });
 
   refinePromoteBtn.addEventListener("click", async () => {

@@ -21,6 +21,8 @@ from pydantic import BaseModel
 
 from app.jobs.runner import (
     _refiner_error_short_message,
+    get_last_augment_result,
+    get_last_relabel_result,
     get_last_train_result,
     run_promote,
     run_train,
@@ -347,6 +349,15 @@ def get_refine_relabel_events(job_id: str):
     )
 
 
+@app.get("/refine/relabel/last")
+def get_refine_relabel_last() -> dict:
+    """Read last relabel run from disk. 404 if absent."""
+    result = get_last_relabel_result()
+    if result is None:
+        raise HTTPException(status_code=404, detail="No previous relabel run found")
+    return result
+
+
 @app.post("/refine/augment")
 def post_refine_augment() -> dict:
     job_id = str(uuid.uuid4())
@@ -386,6 +397,15 @@ def get_refine_augment_events(job_id: str):
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
+
+
+@app.get("/refine/augment/last")
+def get_refine_augment_last() -> dict:
+    """Read last augment run from disk. 404 if absent."""
+    result = get_last_augment_result()
+    if result is None:
+        raise HTTPException(status_code=404, detail="No previous augment run found")
+    return result
 
 
 class PromoteRequest(BaseModel):

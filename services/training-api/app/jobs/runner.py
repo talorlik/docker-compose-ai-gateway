@@ -428,6 +428,136 @@ def _run_trainer_on_candidate(
         raise RuntimeError(f"Trainer on candidate failed: {msg.strip()}")
 
 
+def _find_latest_run_with_subdir(
+    artifacts_dir: str,
+    subdir: str,
+    marker_file: str,
+) -> tuple[str, Path] | None:
+    """Find the most recent refine run that contains *subdir/marker_file*.
+
+    Scans ``{artifacts_dir}/refine_runs/*/`` directories, filters those that
+    have the expected artifact, and returns ``(run_id, run_path)`` for the
+    newest (by mtime) match - or ``None`` if nothing qualifies.
+    """
+    runs_root = Path(artifacts_dir) / "refine_runs"
+    if not runs_root.is_dir():
+        return None
+
+    candidates: list[tuple[float, str, Path]] = []
+    for entry in runs_root.iterdir():
+        if not entry.is_dir():
+            continue
+        marker = entry / subdir / marker_file
+        if marker.exists():
+            candidates.append((entry.stat().st_mtime, entry.name, entry))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    _, run_id, run_path = candidates[0]
+    return run_id, run_path
+
+
+def get_last_relabel_result(
+    model_artifacts_path: str | None = None,
+) -> dict[str, Any] | None:
+    """Read the last relabel run from ``refine_runs/{run_id}/relabel/``.
+
+    Returns the same shape as ``run_relabel_phase()`` or ``None`` when no
+    previous relabel run is found on disk.
+    """
+    artifacts_dir = model_artifacts_path or os.environ.get("MODEL_ARTIFACTS_PATH", "/model")
+    match = _find_latest_run_with_subdir(artifacts_dir, "relabel", "proposed_relabels.csv")
+    if match is None:
+        return None
+
+    run_id, run_path = match
+    try:
+        relabel_dir = run_path / "relabel"
+
+        proposed_path = relabel_dir / "proposed_relabels.csv"
+        proposed_relabels: list[dict[str, Any]] = []
+        if proposed_path.exists():
+            with open(proposed_path, encoding="utf-8", newline="") as f:
+                proposed_relabels = list(csv.DictReader(f))
+
+        batches_dir = relabel_dir / "batches"
+        batches = 0
+        if batches_dir.is_dir():
+            batches = len(list(batches_dir.glob("proposed_relabels.batch_*.csv")))
+
+        candidate_path = relabel_dir / "train_relabel_candidate.csv"
+        train_relabel_candidate_rows = 0
+        if candidate_path.exists():
+            with open(candidate_path, encoding="utf-8", newline="") as f:
+                train_relabel_candidate_rows = sum(1 for _ in csv.reader(f)) - 1
+
+        metrics_before = _read_metrics_only(str(run_path / "metrics_before.json"))
+        metrics_after = _read_metrics_only(str(relabel_dir / "metrics_relabel_candidate.json"))
+
+        return {
+            "run_id": run_id,
+            "batches": batches,
+            "train_relabel_candidate_rows": train_relabel_candidate_rows,
+            "metrics_before": metrics_before,
+            "metrics_after": metrics_after,
+            "proposed_relabels": proposed_relabels,
+        }
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def get_last_augment_result(
+    model_artifacts_path: str | None = None,
+) -> dict[str, Any] | None:
+    """Read the last augment run from ``refine_runs/{run_id}/augment/``.
+
+    Returns the same shape as ``run_augment_phase()`` or ``None`` when no
+    previous augment run is found on disk.
+    """
+    artifacts_dir = model_artifacts_path or os.environ.get("MODEL_ARTIFACTS_PATH", "/model")
+    match = _find_latest_run_with_subdir(artifacts_dir, "augment", "proposed_examples.csv")
+    if match is None:
+        return None
+
+    run_id, run_path = match
+    try:
+        augment_dir = run_path / "augment"
+
+        proposed_path = augment_dir / "proposed_examples.csv"
+        proposed_examples: list[dict[str, Any]] = []
+        if proposed_path.exists():
+            with open(proposed_path, encoding="utf-8", newline="") as f:
+                proposed_examples = list(csv.DictReader(f))
+
+        labels = list(dict.fromkeys(
+            str(r.get("label", "")).strip()
+            for r in proposed_examples
+            if str(r.get("label", "")).strip()
+        ))
+
+        candidate_path = augment_dir / "train_augment_candidate.csv"
+        train_augment_candidate_rows = 0
+        if candidate_path.exists():
+            with open(candidate_path, encoding="utf-8", newline="") as f:
+                train_augment_candidate_rows = sum(1 for _ in csv.reader(f)) - 1
+
+        metrics_before = _read_metrics_only(str(run_path / "metrics_before.json"))
+        metrics_after = _read_metrics_only(str(augment_dir / "metrics_augment_candidate.json"))
+
+        return {
+            "run_id": run_id,
+            "labels": labels,
+            "train_augment_candidate_rows": train_augment_candidate_rows,
+            "metrics_before": metrics_before,
+            "metrics_after": metrics_after,
+            "proposed_examples": proposed_examples,
+        }
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def run_promote(
     model_artifacts_path: str | None = None,
     promote_target_path: str | None = None,

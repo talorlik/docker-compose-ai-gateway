@@ -354,6 +354,12 @@ async def proxy_get_refine_relabel_events(job_id: str):
     return _sse_response(job_id, "/refine/relabel/events")
 
 
+@app.get("/api/refine/relabel/last")
+async def proxy_get_refine_relabel_last():
+    """Proxy GET /refine/relabel/last to training-api."""
+    return await _proxy_get("/refine/relabel/last")
+
+
 @app.post("/api/refine/augment")
 async def proxy_post_refine_augment():
     """Proxy POST /refine/augment to training-api."""
@@ -364,6 +370,12 @@ async def proxy_post_refine_augment():
 async def proxy_get_refine_augment_events(job_id: str):
     """Stream GET /refine/augment/events/{job_id} from training-api."""
     return _sse_response(job_id, "/refine/augment/events")
+
+
+@app.get("/api/refine/augment/last")
+async def proxy_get_refine_augment_last():
+    """Proxy GET /refine/augment/last to training-api."""
+    return await _proxy_get("/refine/augment/last")
 
 
 @app.post("/api/refine/promote")
