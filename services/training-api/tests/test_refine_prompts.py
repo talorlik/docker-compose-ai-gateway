@@ -15,4 +15,5 @@ def test_relabel_batch_prompt_embeds_json_rows():
     ]
     prompt = relabel_misclassified_batch(rows)
     # Ensure the serialized JSON is present so ordering can be preserved.
-    assert json.dumps(rows, ensure_ascii=False) in prompt
+    clean_rows = [{"text": r["text"]} for r in rows]
+    assert json.dumps(clean_rows, ensure_ascii=False) in prompt

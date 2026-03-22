@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY train.py .
 
-RUN chown -R appuser:appuser /train
+RUN chown -R appuser:appuser /train && \
+    mkdir -p /model && chown -R appuser:appuser /model
 
 USER appuser
 

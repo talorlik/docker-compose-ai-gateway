@@ -12,7 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py prompts.py ./
 
-RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app && \
+    mkdir -p /data && chown -R appuser:appuser /data
 
 USER appuser
 

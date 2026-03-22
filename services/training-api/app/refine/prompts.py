@@ -47,8 +47,9 @@ def relabel_misclassified_batch(rows: list[dict]) -> str:
         {"text": "...", "suggested_label": "...", "reason": "...", "confidence": 0.0}
     """
     labels_str = ", ".join(LABELS)
-    # Embed rows as JSON so the LLM can preserve ordering reliably.
-    rows_json = json.dumps(rows, ensure_ascii=False)
+    # Embed only the text so the LLM provides an unbiased label (no anchor bias).
+    clean_rows = [{"text": r["text"]} for r in rows]
+    rows_json = json.dumps(clean_rows, ensure_ascii=False)
     return f"""# Relabel Misclassified Intents (Batch)
 
 ## ROLE
@@ -58,8 +59,8 @@ You are a data quality assistant refining an intent classification dataset.
 For each row, propose the correct intent label.
 
 ## TASK
-1. Read each input row: user text, human true_label, model pred_label.
-2. Decide the correct label for that row.
+1. Read each input row's text.
+2. Decide the correct label for that text without bias from previous labels.
 3. Return one JSON object per input row, in the same order.
 
 ## INPUT ROWS (JSON)

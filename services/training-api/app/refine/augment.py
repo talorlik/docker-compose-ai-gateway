@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,10 +135,25 @@ def _label_rejected_output_path(cfg: RefineConfig, run_id: str, label: str) -> P
 
 def _parse_json_array(raw: str) -> list[dict[str, Any]] | None:
     text = (raw or "").strip()
+
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    if match:
+        text = match.group(1).strip()
+
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        return None
+        start = text.find("[")
+        end = text.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            candidate = text[start : end + 1]
+            try:
+                data = json.loads(candidate)
+            except json.JSONDecodeError:
+                return None
+        else:
+            return None
+
     if not isinstance(data, list):
         return None
     out: list[dict[str, Any]] = []
@@ -157,10 +173,24 @@ def _parse_json_array_etl(
     raw: str,
 ) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]], dict[str, Any]]:
     text = (raw or "").strip()
+
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    if match:
+        text = match.group(1).strip()
+
     try:
         data = json.loads(text)
     except json.JSONDecodeError as e:
-        return None, [], {"error_code": "INVALID_JSON", "error_message": str(e)}
+        start = text.find("[")
+        end = text.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            candidate = text[start : end + 1]
+            try:
+                data = json.loads(candidate)
+            except json.JSONDecodeError:
+                return None, [], {"error_code": "INVALID_JSON", "error_message": str(e)}
+        else:
+            return None, [], {"error_code": "INVALID_JSON", "error_message": str(e)}
 
     if not isinstance(data, list):
         return (

@@ -25,6 +25,9 @@ def _make_pool(**overrides) -> OllamaPool:
         max_inflight_per_instance=2,
         num_ctx=512,
         num_predict=128,
+        temperature=0.1,
+        seed=42,
+        structured_output_enabled=True,
     )
     defaults.update(overrides)
     return OllamaPool(**defaults)
@@ -166,6 +169,7 @@ def test_probe_one_unhealthy_on_invalid_json():
     mock_resp.status_code = 200
     mock_resp.text = "not json"
     mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.side_effect = pool_mod.requests.exceptions.JSONDecodeError("msg", "not json", 0)
 
     with patch.object(pool_mod.requests, "get", return_value=mock_resp):
         healthy, err = pool._probe_one(URLS[0])

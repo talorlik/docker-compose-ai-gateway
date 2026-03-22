@@ -40,7 +40,7 @@ def test_parse_augment_json_filters_invalid_items():
 
 def test_merge_relabel_outputs_applies_last_suggestion(tmp_path):  # type: ignore[no-untyped-def]
     cfg = RefineConfig.from_env(str(tmp_path))
-    run_id = "r1"
+    run_id = "00000000-0000-0000-0000-000000000001"
     batches_dir = cfg.relabel_dir(run_id) / "batches"
     batches_dir.mkdir(parents=True, exist_ok=True)
 
@@ -61,7 +61,7 @@ def test_merge_relabel_outputs_applies_last_suggestion(tmp_path):  # type: ignor
 
 def test_merge_augment_outputs_dedupes_existing_text(tmp_path):  # type: ignore[no-untyped-def]
     cfg = RefineConfig.from_env(str(tmp_path))
-    run_id = "r2"
+    run_id = "00000000-0000-0000-0000-000000000002"
     labels_dir = cfg.augment_dir(run_id) / "labels"
     labels_dir.mkdir(parents=True, exist_ok=True)
 

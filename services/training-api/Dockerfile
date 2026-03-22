@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 
-RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app && \
+    mkdir -p /model && chown -R appuser:appuser /model
 
 EXPOSE 8000
 

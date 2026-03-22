@@ -42,6 +42,9 @@ def _cfg(tmp_path) -> RefineConfig:
         ollama_max_inflight_per_instance=2,
         ollama_num_ctx=512,
         ollama_num_predict=128,
+        refiner_temperature=0.1,
+        refiner_seed=42,
+        structured_output_enabled=True,
         relabel_tasks_stream="test:relabel:tasks",
         augment_tasks_stream="test:augment:tasks",
         relabel_consumer_group="relabel-workers",
@@ -218,7 +221,7 @@ def test_handle_relabel_task_filters_invalid_labels(tmp_path):
 
 def test_run_relabel_workers_processes_batch(tmp_path):
     cfg = _cfg(tmp_path)
-    run_id = "r1"
+    run_id = "00000000-0000-0000-0000-000000000001"
     cfg.relabel_dir(run_id).mkdir(parents=True, exist_ok=True)
 
     entry_fields = {
@@ -261,7 +264,7 @@ def test_run_relabel_workers_processes_batch(tmp_path):
 
 def test_run_augment_workers_processes_label(tmp_path):
     cfg = _cfg(tmp_path)
-    run_id = "r2"
+    run_id = "00000000-0000-0000-0000-000000000002"
     cfg.augment_dir(run_id).mkdir(parents=True, exist_ok=True)
 
     entry_fields = {
@@ -303,7 +306,7 @@ def test_run_augment_workers_processes_label(tmp_path):
 
 def test_augment_worker_skips_wrong_run_id(tmp_path):
     cfg = _cfg(tmp_path)
-    run_id = "r3"
+    run_id = "00000000-0000-0000-0000-000000000003"
     cfg.augment_dir(run_id).mkdir(parents=True, exist_ok=True)
 
     entry_fields = {"run_id": "other-run", "label": "search", "n": "3"}
@@ -330,7 +333,7 @@ def test_augment_worker_skips_wrong_run_id(tmp_path):
 
 def test_relabel_worker_publishes_error_on_bad_ollama_response(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
-    run_id = "r4"
+    run_id = "00000000-0000-0000-0000-000000000004"
     cfg.relabel_dir(run_id).mkdir(parents=True, exist_ok=True)
 
     entry_fields = {
@@ -374,7 +377,7 @@ def test_merge_relabel_outputs_writes_candidate_csv_even_when_no_batches(tmp_pat
     import pandas as pd
 
     cfg = _cfg(tmp_path)
-    run_id = "r1"
+    run_id = "00000000-0000-0000-0000-000000000001"
     # Do not create cfg.relabel_dir(run_id) / batches directory on purpose.
     train_df = pd.DataFrame([{"text": "hello", "label": "unknown"}])
 
@@ -389,7 +392,7 @@ def test_merge_relabel_outputs_writes_candidate_csv_even_when_no_batches(tmp_pat
 
 def test_relabel_worker_reclaims_pending_entry_and_processes(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
-    run_id = "r5"
+    run_id = "00000000-0000-0000-0000-000000000005"
     cfg.relabel_dir(run_id).mkdir(parents=True, exist_ok=True)
 
     entry_fields = {
@@ -424,7 +427,7 @@ def test_relabel_worker_reclaims_pending_entry_and_processes(tmp_path, monkeypat
 
 def test_relabel_worker_acks_after_max_retries(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
-    run_id = "r6"
+    run_id = "00000000-0000-0000-0000-000000000006"
     cfg.relabel_dir(run_id).mkdir(parents=True, exist_ok=True)
 
     entry_fields = {
@@ -458,7 +461,7 @@ def test_relabel_worker_acks_after_max_retries(tmp_path, monkeypatch):
 
 def test_augment_worker_acks_after_max_retries(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
-    run_id = "r7"
+    run_id = "00000000-0000-0000-0000-000000000007"
     cfg.augment_dir(run_id).mkdir(parents=True, exist_ok=True)
 
     entry_fields = {"run_id": run_id, "label": "search", "n": "3"}

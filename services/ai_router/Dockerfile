@@ -29,6 +29,8 @@ ENV PYTHONUNBUFFERED=1
 
 COPY --chown=appuser:appgroup app/ ./app/
 
+RUN mkdir -p /model && chown appuser:appgroup /model
+
 USER appuser
 EXPOSE 8000
 

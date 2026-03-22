@@ -181,6 +181,7 @@ class OllamaPool:
             endpoint = f"{url.rstrip('/')}/api/tags"
             r = requests.get(endpoint, timeout=3)
             r.raise_for_status()
+            r.json()  # validate response is JSON
             return True, None
         except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
             return False, str(e)
