@@ -18,9 +18,9 @@ with training_api_imported():
         enqueue_relabel_batches,
         run_relabel_workers,
         _handle_task as handle_relabel_task,
-        _parse_json_response,
         merge_relabel_outputs,
     )
+    from app.refine.parser import parse_json_response as _parse_json_response
     from app.refine.augment import (
         enqueue_augment_tasks,
         run_augment_workers,

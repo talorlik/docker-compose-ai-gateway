@@ -8,7 +8,7 @@ from import_training_api import training_api_imported
 
 with training_api_imported():
     from app.refine.augment import _parse_json_array as parse_augment_json  # pylint: disable=import-error
-    from app.refine.relabel import _parse_json_response as parse_relabel_json  # pylint: disable=import-error
+    from app.refine.parser import parse_json_response as parse_relabel_json  # pylint: disable=import-error
     from app.refine.augment import merge_augment_outputs  # pylint: disable=import-error
     from app.refine.relabel import merge_relabel_outputs  # pylint: disable=import-error
     from app.refine.config import RefineConfig  # pylint: disable=import-error
@@ -36,6 +36,12 @@ def test_parse_augment_json_filters_invalid_items():
     out = parse_augment_json(raw)
     assert out is not None
     assert [r["text"] for r in out] == ["okay"]
+
+
+def test_parse_nested_json_object():
+    raw = json.dumps({"examples": [{"text": "okay", "label": "search"}]})
+    out = parse_relabel_json(raw)
+    assert out == [{"text": "okay", "label": "search"}]
 
 
 def test_merge_relabel_outputs_applies_last_suggestion(tmp_path):  # type: ignore[no-untyped-def]

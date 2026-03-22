@@ -25,64 +25,10 @@ from app.refine.config import RefineConfig
 from app.refine.ollama_pool import OllamaPool, get_ollama_pool
 from app.refine.prompts import LABELS, SYSTEM_INSTRUCTIONS, relabel_misclassified_batch
 from app.refine.training import train_candidate
+from app.refine.parser import parse_json_response
 
 
-def _parse_json_response(raw: str) -> list[dict[str, Any]] | None:
-    """Parse Ollama output into a JSON array of relabel rows.
 
-    In practice, models sometimes wrap JSON in markdown code fences or return
-    a JSON object that contains the array. This parser is intentionally
-    forgiving so relabeling can proceed.
-    """
-    text = (raw or "").strip()
-
-    # Strip common markdown code fences: ```json ... ```
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if match:
-        text = match.group(1).strip()
-
-    def _coerce_to_list(data: object) -> list[dict[str, Any]] | None:
-        if isinstance(data, list):
-            return [r for r in data if isinstance(r, dict)]
-        if isinstance(data, dict):
-            # Sometimes models return a single object instead of an array.
-            if (
-                "text" in data
-                and "suggested_label" in data
-                and "reason" in data
-                and "confidence" in data
-            ):
-                return [data]  # type: ignore[list-item]
-            # Accept a few likely wrapper keys.
-            for key in ("relabels", "items", "data", "results", "proposed_relabels"):
-                v = data.get(key)
-                if isinstance(v, list):
-                    return [r for r in v if isinstance(r, dict)]
-        return None
-
-    # 1) Try parsing the whole thing.
-    try:
-        data = json.loads(text)
-        parsed = _coerce_to_list(data)
-        if parsed is not None:
-            return parsed
-    except json.JSONDecodeError:
-        pass
-
-    # 2) If there is extra text, attempt to extract the first JSON array.
-    start = text.find("[")
-    end = text.rfind("]")
-    if start != -1 and end != -1 and end > start:
-        candidate = text[start : end + 1]
-        try:
-            data = json.loads(candidate)
-            parsed = _coerce_to_list(data)
-            if parsed is not None:
-                return parsed
-        except json.JSONDecodeError:
-            return None
-
-    return None
 
 
 @dataclass(frozen=True)
@@ -226,7 +172,7 @@ def _handle_task_etl(
     expected_count = int(len(task.rows))
     prompt = relabel_misclassified_batch(task.rows)
     raw = pool.generate(prompt=prompt, system=SYSTEM_INSTRUCTIONS)
-    parsed = _parse_json_response(raw)
+    parsed = parse_json_response(raw)
 
     validation: dict[str, Any] = {
         "input_rows_count": expected_count,
@@ -323,7 +269,7 @@ def _handle_task_etl(
         for idx, row in enumerate(task.rows):
             row_prompt = relabel_misclassified_batch([row])
             row_raw = pool.generate(prompt=row_prompt, system=SYSTEM_INSTRUCTIONS)
-            row_parsed = _parse_json_response(row_raw)
+            row_parsed = parse_json_response(row_raw)
             raw_parts.append(f"--- row {idx} ---\n{row_raw}")
             prompt_parts.append(f"--- row {idx} ---\n{row_prompt}")
 

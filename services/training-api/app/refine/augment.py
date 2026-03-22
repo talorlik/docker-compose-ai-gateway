@@ -25,6 +25,7 @@ from app.refine.config import RefineConfig
 from app.refine.ollama_pool import OllamaPool, get_ollama_pool
 from app.refine.prompts import LABELS, SYSTEM_INSTRUCTIONS, augment_examples
 from app.refine.training import train_candidate
+from app.refine.parser import parse_json_response
 
 
 MIN_TEXT_LENGTH = 3
@@ -134,27 +135,8 @@ def _label_rejected_output_path(cfg: RefineConfig, run_id: str, label: str) -> P
 
 
 def _parse_json_array(raw: str) -> list[dict[str, Any]] | None:
-    text = (raw or "").strip()
-
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if match:
-        text = match.group(1).strip()
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("[")
-        end = text.rfind("]")
-        if start != -1 and end != -1 and end > start:
-            candidate = text[start : end + 1]
-            try:
-                data = json.loads(candidate)
-            except json.JSONDecodeError:
-                return None
-        else:
-            return None
-
-    if not isinstance(data, list):
+    data = parse_json_response(raw)
+    if not data:
         return None
     out: list[dict[str, Any]] = []
     for item in data:
@@ -172,33 +154,15 @@ def _parse_json_array_etl(
     *,
     raw: str,
 ) -> tuple[list[dict[str, Any]] | None, list[dict[str, Any]], dict[str, Any]]:
-    text = (raw or "").strip()
+    data = parse_json_response(raw)
 
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
-    if match:
-        text = match.group(1).strip()
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as e:
-        start = text.find("[")
-        end = text.rfind("]")
-        if start != -1 and end != -1 and end > start:
-            candidate = text[start : end + 1]
-            try:
-                data = json.loads(candidate)
-            except json.JSONDecodeError:
-                return None, [], {"error_code": "INVALID_JSON", "error_message": str(e)}
-        else:
-            return None, [], {"error_code": "INVALID_JSON", "error_message": str(e)}
-
-    if not isinstance(data, list):
+    if data is None:
         return (
             None,
             [],
             {
-                "error_code": "NOT_JSON_ARRAY",
-                "found_type": type(data).__name__,
+                "error_code": "INVALID_JSON_ARRAY",
+                "error_message": "Invalid JSON array from Ollama",
             },
         )
 
