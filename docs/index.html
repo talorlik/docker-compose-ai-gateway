@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docker Compose AI Gateway - Documentation</title>
+    <meta name="description" content="Documentation for Docker Compose AI Gateway, including setup, architecture, configuration, and operations guidance.">
+    <link rel="canonical" href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/index.html">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Docker Compose AI Gateway - Documentation">
+    <meta property="og:description" content="Local AI microservice mesh with gateway routing, train/refine workflows, and project documentation.">
+    <meta property="og:url" content="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/index.html">
+    <meta property="og:image" content="https://github.com/talorlik/docker-compose-ai-gateway/raw/main/docs/header_banner.png">
+    <meta property="og:locale" content="en">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Docker Compose AI Gateway - Documentation">
+    <meta name="twitter:description" content="Local AI microservice mesh with gateway routing and train/refine operations.">
+    <meta name="twitter:image" content="https://github.com/talorlik/docker-compose-ai-gateway/raw/main/docs/header_banner.png">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link id="theme-stylesheet" rel="stylesheet" href="light-theme.css">
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#hero" class="nav-logo">Docker Compose AI Gateway</a>
+            <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Toggle navigation menu">☰</button>
+            <ul class="nav-menu" id="navMenu">
+                <li><a href="#overview">Overview</a></li>
+                <li><a href="#getting-started">Getting Started</a></li>
+                <li><a href="#architecture">Architecture</a></li>
+                <li><a href="#demo-details">Demo Details</a></li>
+                <li><a href="#documentation">Documentation</a></li>
+                <li><a href="#access">Access</a></li>
+                <li><a href="#security">Security</a></li>
+                <li><a href="#support">Support</a></li>
+                <li>
+                    <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme" title="Toggle theme">
+                        <span id="sunIcon" class="icon hidden">☀️</span>
+                        <span id="moonIcon" class="icon">🌙</span>
+                    </button>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <main id="main-content">
+        <section id="hero" class="hero">
+            <div class="hero-content">
+                <h1>Docker Compose AI Gateway</h1>
+                <p>Self-hosted AI gateway and tooling stack with documented architecture, deployment, and operations workflows.</p>
+                <img src="header_banner.png" alt="Docker Compose AI Gateway architecture banner" class="hero-banner">
+            </div>
+        </section>
+
+        <section id="content-index">
+            <h2>Content Index</h2>
+            <div class="card">
+                <ul>
+                    <li><a href="#overview">Project Overview</a></li>
+                    <li><a href="#getting-started">Getting Started</a></li>
+                    <li><a href="#architecture">Architecture</a></li>
+                    <li><a href="#demo-details">Demo Details</a></li>
+                    <li><a href="#documentation">Documentation</a></li>
+                    <li><a href="#access">Access</a></li>
+                    <li><a href="#security">Security</a></li>
+                    <li><a href="#support">Support</a></li>
+                    <li><a href="#license">License</a></li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="overview">
+            <h2>Overview</h2>
+            <div class="card">
+                <h3>What This Project Provides</h3>
+                <p>
+                    Docker Compose AI Gateway is a locally runnable microservice mesh where
+                    an AI classifier routes requests to domain-specific backend services.
+                    The gateway serves the UI and API entrypoint, proxies training/refine
+                    workflows, and exposes application-level request tracing.
+                </p>
+                <p class="ask-docs-inline">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/README.md" target="_blank" rel="noopener noreferrer" class="ask-docs-link">
+                        <span class="ask-docs-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                            </svg>
+                        </span>
+                        Read the complete project README
+                    </a>
+                </p>
+            </div>
+
+            <div class="card">
+                <h3>Core Components</h3>
+                <ul>
+                    <li><strong>Gateway</strong> serves static UI and the main API endpoint</li>
+                    <li><strong>AI Router</strong> classifies intent and returns route + confidence</li>
+                    <li><strong>Backends</strong> (search, image, ops) simulate domain responses</li>
+                    <li><strong>Trainer</strong> optionally trains and emits model artifacts</li>
+                    <li><strong>Refiner</strong> optionally relabels/augments datasets (Ollama)</li>
+                    <li><strong>Redis + Training API</strong> support train/refine job state</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>Quick Start Commands</h3>
+                <pre><code># Generate env file for selected environment
+python scripts/generate_env.py
+
+# Build and start
+docker compose -f compose/docker-compose.yaml up --build -d
+
+# Optional training
+docker compose -f compose/docker-compose.yaml --profile train run --rm trainer
+
+# Optional refine actions
+docker compose -f compose/docker-compose.yaml --profile refine run --rm training-api relabel
+docker compose -f compose/docker-compose.yaml --profile refine run --rm training-api augment
+./scripts/promote.sh</code></pre>
+            </div>
+        </section>
+
+        <section id="getting-started">
+            <h2>Getting Started</h2>
+            <div class="card">
+                <h3>Prerequisites</h3>
+                <ul>
+                    <li>Docker and Docker Compose installed</li>
+                    <li>Python 3 available for helper scripts</li>
+                    <li>Access to required API credentials for selected providers</li>
+                </ul>
+                <p>
+                    Optionally use <code>./scripts/demo.sh run</code> to generate env and
+                    start the stack in one command.
+                </p>
+            </div>
+
+            <div class="deployment-options">
+                <div class="deployment-card">
+                    <h4>Step 1: Configure Project Settings</h4>
+                    <p>
+                        Update core settings in <code>config/PROJECT_CONFIG.yaml</code>
+                        and confirm environment expectations for your host.
+                    </p>
+                </div>
+                <div class="deployment-card">
+                    <h4>Step 2: Generate Environment</h4>
+                    <p>
+                        Run <code>scripts/generate_env.py</code> to create and synchronize
+                        environment files consumed by the compose stack.
+                    </p>
+                </div>
+                <div class="deployment-card">
+                    <h4>Step 3: Start Services</h4>
+                    <p>
+                        Use <code>compose/docker-compose.yaml</code> to launch the stack,
+                        then validate health and connectivity for each enabled service.
+                    </p>
+                </div>
+                <div class="deployment-card">
+                    <h4>Step 4: Optional Dev Overlay</h4>
+                    <p>
+                        For live code reload, combine
+                        <code>compose/docker-compose.yaml</code> and
+                        <code>compose/docker-compose.dev.yaml</code>.
+                    </p>
+                </div>
+                <div class="deployment-card">
+                    <h4>Step 5: Verify and Iterate</h4>
+                    <p>
+                        Use the demo and troubleshooting docs to validate workflows and
+                        refine your configuration for local or team usage.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section id="architecture">
+            <h2>Architecture</h2>
+            <div class="card">
+                <h3>System Layout</h3>
+                <p>
+                    The stack is organized around a compose-driven runtime, centralized
+                    configuration, and service code under <code>services/</code>. The
+                    gateway routes user requests to AI router and backend services while
+                    training/refine components run behind compose profiles.
+                </p>
+            </div>
+            <figure class="architecture-diagram-wrapper" aria-label="Project architecture diagram">
+                <img src="architecture-diagrams/diagrams/docker_compose_ai_gateway_unified.png" alt="Project architecture diagram" class="architecture-diagram">
+            </figure>
+            <div class="card">
+                <h3>Configuration Flow</h3>
+                <p>
+                    Project config and generated environment files feed service startup.
+                    This keeps configuration explicit and reproducible across machines.
+                </p>
+            </div>
+            <div class="card">
+                <h3>Project Structure</h3>
+                <pre><code>compose/          # Docker Compose definitions
+config/           # Authoritative PROJECT_CONFIG.yaml
+env/              # Generated .env.&lt;env&gt; files for Compose
+services/         # Gateway, router, trainer, backends, training-api
+scripts/          # Demo, env generation, promotion utilities
+docs/             # Project docs and this GitHub Page</code></pre>
+            </div>
+        </section>
+
+        <section id="demo-details">
+            <h2>Demo Details</h2>
+            <div class="card">
+                <h3>Demo Workflow</h3>
+                <p>
+                    Use the demo script to run the common lifecycle quickly:
+                    generate env, build/start services, run tests, and stop/cleanup.
+                    This is the fastest way to validate end-to-end behavior.
+                </p>
+                <pre><code># Start stack using demo helper
+./scripts/demo.sh run
+
+# Optional dev mode with reload
+./scripts/demo.sh run --dev
+
+# Run test routine
+./scripts/demo.sh test
+
+# Stop stack
+./scripts/demo.sh down</code></pre>
+            </div>
+            <div class="card">
+                <h3>Full Runbook</h3>
+                <p>
+                    For build, run, stop, scaling, and failure simulation guidance,
+                    see the detailed demo document:
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/demo/DEMO.md">docs/auxiliary/demo/DEMO.md</a>.
+                </p>
+            </div>
+        </section>
+
+        <section id="documentation">
+            <h2>Documentation</h2>
+            <h3>Core Documentation</h3>
+            <div class="doc-grid">
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/requirements/PRD.md">Product Requirements</a>
+                    <p>Primary feature and behavior requirements.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/architecture/ARCHITECTURE.md">Architecture Guide</a>
+                    <p>System components and interactions.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/architecture/TECHNICAL.md">Technical Details</a>
+                    <p>Implementation-oriented technical reference.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/architecture/CONFIGURATION.md">Configuration Guide</a>
+                    <p>Centralized config and env generation details.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/demo/DEMO.md">Demo Runbook</a>
+                    <p>Build/run/stop, scaling, and failure demos.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/requirements/ACCEPTANCE.md">Acceptance Criteria</a>
+                    <p>Verification checklist for expected behavior.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/troubleshooting/DEBUG.md">Troubleshooting</a>
+                    <p>Debug runbook and common failure resolution.</p>
+                </div>
+            </div>
+
+            <h3>Planning and Refiner Docs</h3>
+            <div class="doc-grid">
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/planning/PROJECT_PLAN.md">Project Plan</a>
+                    <p>Delivery sequencing and milestones.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/planning/TASKS.md">Implementation Tasks</a>
+                    <p>Actionable development and integration tasks.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/planning/PERFORMANCE_IMPROVEMENTS.md">Performance Improvements</a>
+                    <p>Refinement performance tuning guidance.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/planning/AUGMENTATION_QUALITY_IMPROVEMENTS.md">Augmentation Quality Improvements</a>
+                    <p>Quality gates and promotion tolerance planning.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/refiner/REFINER_PLAN.md">Refiner Plan</a>
+                    <p>Conceptual overview of refiner architecture.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/refiner/REFINER_TECHNICAL.md">Refiner Technical</a>
+                    <p>Refiner internals and implementation details.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/refiner/REFINER_FLOW.md">Refiner Flow</a>
+                    <p>End-to-end flow and handoff states.</p>
+                </div>
+            </div>
+
+            <h3>Train and Refine GUI Documents</h3>
+            <div class="doc-grid">
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/planning/TRAIN_AND_REFINE_GUI_PAGES_PLAN.md">Train and Refine GUI Plan</a>
+                    <p>Scope and phased delivery plan for UI pages.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/architecture/TRAIN_AND_REFINE_GUI_PAGES_TECH.md">Train and Refine GUI Technical</a>
+                    <p>Technical design for GUI behavior and integration.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/requirements/TRAIN_AND_REFINE_GUI_PAGES_PRD.md">Train and Refine GUI PRD</a>
+                    <p>Requirements for train/refine user-facing features.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/planning/TRAIN_AND_REFINE_GUI_PAGES_TASKS.md">Train and Refine GUI Tasks</a>
+                    <p>Execution checklist for GUI implementation tasks.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/NotebookLM/SLIDE_DECK_DETAILED_INSTRUCTIONS.md">NotebookLM Slide Deck Instructions</a>
+                    <p>Detailed instructions used for presentation generation.</p>
+                </div>
+            </div>
+
+            <h3>Auxiliary and Diagram Docs</h3>
+            <div class="doc-grid">
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/architecture-diagrams/SETUP.md">Architecture Diagram Setup</a>
+                    <p>How to generate and update architecture diagrams.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/architecture-diagrams/INSTRUCTIONS.md">Architecture Diagram Instructions</a>
+                    <p>Diagram authoring and export instructions.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/architecture-diagrams/AGENT.md">Architecture Diagram Agent Notes</a>
+                    <p>Guidance used to generate architecture assets.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/reference/METRICS_JSON.md">Metrics JSON Reference</a>
+                    <p>Metrics shape and field semantics reference.</p>
+                </div>
+                <div class="doc-item">
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/NotebookLM/WELCOME_NOTE.md">NotebookLM Welcome Note</a>
+                    <p>NotebookLM context and onboarding notes.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="access">
+            <h2>Access</h2>
+            <div class="card">
+                <h3>Local Service Access</h3>
+                <p>
+                    Service endpoints depend on your compose profile and environment.
+                    Review compose service mappings and generated environment values for
+                    exact ports and hostnames.
+                </p>
+            </div>
+            <div class="card">
+                <h3>Repository</h3>
+                <p>
+                    Source, scripts, and configuration are maintained in this repository:
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway" target="_blank" rel="noopener noreferrer" aria-label="Open GitHub repository">github.com/talorlik/docker-compose-ai-gateway</a>.
+                </p>
+            </div>
+        </section>
+
+        <section id="security">
+            <h2>Security</h2>
+            <div class="card">
+                <h3>Security Considerations</h3>
+                <ul>
+                    <li>Do not commit real credentials into environment files</li>
+                    <li>Prefer least-privilege API keys and scoped tokens</li>
+                    <li>Rotate secrets and verify service exposure in compose configs</li>
+                    <li>Use isolated environments for testing and experimentation</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="support">
+            <h2>Support</h2>
+            <div class="card ask-docs-card">
+                <a href="https://github.com/talorlik/docker-compose-ai-gateway" target="_blank" rel="noopener noreferrer" class="ask-docs-link">
+                    <span class="ask-docs-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2a10 10 0 0 0-3.16 19.5c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.2-3.37-1.2-.45-1.14-1.1-1.44-1.1-1.44-.9-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.88 1.51 2.3 1.08 2.86.83.09-.65.34-1.09.62-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.54 9.54 0 0 1 12 6.84a9.5 9.5 0 0 1 2.5.34c1.9-1.29 2.74-1.02 2.74-1.02.56 1.38.21 2.4.11 2.65.64.7 1.03 1.6 1.03 2.68 0 3.85-2.34 4.69-4.57 4.94.35.3.66.9.66 1.82v2.7c0 .27.18.58.69.48A10 10 0 0 0 12 2z"></path>
+                        </svg>
+                    </span>
+                    Open repository, issues, and actions on GitHub
+                </a>
+            </div>
+            <div class="card">
+                <h3>Operations and Troubleshooting</h3>
+                <p>
+                    Start with the troubleshooting docs, then inspect compose logs and
+                    service health checks to isolate configuration or runtime issues.
+                </p>
+                <p>
+                    Troubleshooting guide:
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/troubleshooting/DEBUG.md">docs/auxiliary/troubleshooting/DEBUG.md</a>.
+                </p>
+            </div>
+            <div class="card">
+                <h3>Testing Shortcuts</h3>
+                <pre><code># Run all tests
+pytest
+
+# Service examples
+pytest services/gateway/tests/ -v
+pytest services/ai_router/tests/ -v
+pytest services/training-api/tests/ -v
+
+# Integration and e2e
+pytest tests/ -v</code></pre>
+            </div>
+            <div class="card">
+                <h3>Useful Paths</h3>
+                <ul>
+                    <li><code>compose/docker-compose.yaml</code></li>
+                    <li><code>config/PROJECT_CONFIG.yaml</code></li>
+                    <li><code>scripts/generate_env.py</code></li>
+                    <li><code>docs/auxiliary/</code></li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="license">
+            <h2>License</h2>
+            <div class="card">
+                <h3>MIT License</h3>
+                <p>
+                    This project is released under the MIT License. See the full license
+                    text in:
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/LICENSE">LICENSE</a>.
+                </p>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p><strong>Docker Compose AI Gateway Documentation</strong></p>
+        <p>
+            <a href="https://github.com/talorlik/docker-compose-ai-gateway" target="_blank" rel="noopener noreferrer">Repository</a>
+            |
+            <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/README.md" target="_blank" rel="noopener noreferrer">README</a>
+            |
+            <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/demo/DEMO.md" target="_blank" rel="noopener noreferrer">Demo</a>
+            |
+            <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/troubleshooting/DEBUG.md" target="_blank" rel="noopener noreferrer">Troubleshooting</a>
+            |
+            <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
+        </p>
+        <p>Copyright (c) Tal Orlik - MIT licensed.</p>
+    </footer>
+
+    <button id="scrollToTopButton" class="scroll-to-top" aria-label="Scroll to top" title="Scroll to top">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 15l-6-6-6 6"></path>
+        </svg>
+    </button>
+
+    <script src="main.js"></script>
+</body>
+</html>

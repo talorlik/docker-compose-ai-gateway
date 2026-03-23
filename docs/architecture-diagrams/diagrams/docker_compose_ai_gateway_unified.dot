@@ -1,0 +1,536 @@
+digraph "docker-compose-ai-gateway Unified Architecture" {
+	graph [bb="0,0,2260.2,1585.8",
+		bgcolor=white,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=14,
+		label="docker-compose-ai-gateway Unified Architecture",
+		lheight=0.21,
+		lp="1130.1,11.5",
+		lwidth=4.05,
+		nodesep=0.8,
+		pad=0.5,
+		rankdir=TB,
+		ranksep=1.2,
+		splines=ortho
+	];
+	node [fixedsize=true,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		height=1.4,
+		imagescale=true,
+		label="\N",
+		labelloc=b,
+		shape=box,
+		style=rounded,
+		width=1.4
+	];
+	edge [color="#7B8894"];
+	subgraph "cluster_BROWSER / CLI CLIENTS" {
+		graph [bb="724,1361,999,1563.3",
+			bgcolor="#E3F2FD",
+			color="#E3F2FD",
+			fontname="Sans-Serif",
+			fontsize=12,
+			label="BROWSER / CLI CLIENTS",
+			labeljust=l,
+			lheight=0.18,
+			lp="804.75,1553",
+			lwidth=2.02,
+			pencolor="#607D8B",
+			rankdir=LR,
+			shape=box,
+			style=filled
+		];
+		a7dbc789d31744f699a211aae6606b2a	[height=2.3,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/client/users.png",
+			label="Browser UI
+(/, #train, #refine)",
+			pos="941,1451.8",
+			shape=none];
+		"3a9afa36ae8d44bf8f492c4ab541b8cb"	[height=2.3,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/client/users.png",
+			label="CLI / Scripts
+(optional)",
+			pos="782,1451.8",
+			shape=none];
+	}
+	subgraph "cluster_LOCALHOST EXPOSED PORTS" {
+		graph [bb="8,1361,442,1563.3",
+			bgcolor="#E3F2FD",
+			color="#E3F2FD",
+			fontname="Sans-Serif",
+			fontsize=12,
+			label="LOCALHOST EXPOSED PORTS",
+			labeljust=l,
+			lheight=0.18,
+			lp="106,1553",
+			lwidth=2.50,
+			pencolor="#607D8B",
+			rankdir=LR,
+			shape=box,
+			style=filled
+		];
+		a5a45e99ffd5463e9cd52110214ffa05	[height=2.3,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/generic/compute/\
+rack.png",
+			label="127.0.0.1:8000
+Gateway UI + API",
+			pos="384,1451.8",
+			shape=none];
+		"848e03a206e540618c64a1caf630a798"	[height=2.3,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/generic/compute/\
+rack.png",
+			label="127.0.0.1:8001
+ai_router debug",
+			pos="225,1451.8",
+			shape=none];
+		"6428d4aa9e0746179c966cd4371f066e"	[height=2.3,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/generic/compute/\
+rack.png",
+			label="127.0.0.1:11434
+Ollama (profile active)",
+			pos="66,1451.8",
+			shape=none];
+	}
+	subgraph "cluster_CORE RUNTIME (DEFAULT PROFILE)" {
+		graph [bb="774,816.5,1383,1276.6",
+			bgcolor="#E8F5E9",
+			color="#E8F5E9",
+			fontname="Sans-Serif",
+			fontsize=12,
+			label="CORE RUNTIME (DEFAULT PROFILE)",
+			labeljust=l,
+			lheight=0.18,
+			lp="888.12,1266.2",
+			lwidth=2.95,
+			pencolor="#607D8B",
+			rankdir=LR,
+			shape=box,
+			style=filled
+		];
+		subgraph "cluster_API GATEWAY LAYER" {
+			graph [bb="1073,1074.3,1211,1247.9",
+				bgcolor="#E8EAF6",
+				color="#E8EAF6",
+				fontname="Sans-Serif",
+				fontsize=12,
+				label="API GATEWAY LAYER",
+				labeljust=l,
+				lheight=0.18,
+				lp="1142.1,1237.5",
+				lwidth=1.70,
+				pencolor="#607D8B",
+				rankdir=LR,
+				shape=box,
+				style=filled
+			];
+			e99bd20646ad4506a5f81ef114bb7355	[height=1.9,
+				image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/container/\
+docker.png",
+				label=gateway,
+				pos="1142,1150.7",
+				shape=none];
+		}
+		subgraph "cluster_INFERENCE RUNTIME" {
+			graph [bb="782,824.5,1375,998.05",
+				bgcolor="#E8F5E9",
+				color="#E8F5E9",
+				fontname="Sans-Serif",
+				fontsize=12,
+				label="INFERENCE RUNTIME",
+				labeljust=l,
+				lheight=0.18,
+				lp="854.88,987.67",
+				lwidth=1.80,
+				pencolor="#607D8B",
+				rankdir=LR,
+				shape=box,
+				style=filled
+			];
+			ea7b0acee1db457badca141d2640bb28	[height=1.9,
+				image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/compute/\
+server.png",
+				label=ai_router,
+				pos="1317,900.9",
+				shape=none];
+			b9437c97220049c6907136c72315e34c	[height=1.9,
+				image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/compute/\
+server.png",
+				label=search_service,
+				pos="840,900.9",
+				shape=none];
+			"297af3fbffff448dac3f6e42d2943dc1"	[height=1.9,
+				image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/compute/\
+server.png",
+				label=image_service,
+				pos="999,900.9",
+				shape=none];
+			eac33592a9ee4b4586b2a9fbbf422e69	[height=1.9,
+				image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/compute/\
+server.png",
+				label=ops_service,
+				pos="1158,900.9",
+				shape=none];
+		}
+		e99bd20646ad4506a5f81ef114bb7355 -> ea7b0acee1db457badca141d2640bb28	[dir=forward,
+			fontcolor="#2D3436",
+			fontname="Sans-Serif",
+			fontsize=13,
+			label="POST /classify",
+			lp="1331.5,1025.8",
+			pos="e,1317,969.28 1192.1,1117 1243.9,1117 1317,1117 1317,1117 1317,1117 1317,980.79 1317,980.79"];
+		e99bd20646ad4506a5f81ef114bb7355 -> b9437c97220049c6907136c72315e34c	[dir=forward,
+			fontcolor="#2D3436",
+			fontname="Sans-Serif",
+			fontsize=13,
+			label="POST /handle
+(route=search)",
+			lp="886.88,1025.8",
+			pos="e,861.4,969.14 1091.8,1096 1011.1,1096 861.4,1096 861.4,1096 861.4,1096 861.4,980.65 861.4,980.65"];
+		e99bd20646ad4506a5f81ef114bb7355 -> "297af3fbffff448dac3f6e42d2943dc1"	[dir=forward,
+			fontcolor="#2D3436",
+			fontname="Sans-Serif",
+			fontsize=13,
+			label="POST /handle
+(route=image)",
+			lp="1037.6,1025.8",
+			pos="e,1049.3,901 1099.6,1082.5 1099.6,1008.5 1099.6,901 1099.6,901 1099.6,901 1060.8,901 1060.8,901"];
+		e99bd20646ad4506a5f81ef114bb7355 -> eac33592a9ee4b4586b2a9fbbf422e69	[dir=forward,
+			fontcolor="#2D3436",
+			fontname="Sans-Serif",
+			fontsize=13,
+			label="POST /handle
+(route=ops)",
+			lp="1183.6,1025.8",
+			pos="e,1150,969.08 1150,1082.4 1150,1082.4 1150,980.59 1150,980.59"];
+	}
+	subgraph "cluster_TRAIN/REFINE CONTROL PLANE" {
+		graph [bb="1432,537.9,1639,998.05",
+			bgcolor="#F3E5F5",
+			color="#F3E5F5",
+			fontname="Sans-Serif",
+			fontsize=12,
+			label="TRAIN/REFINE CONTROL PLANE",
+			labeljust=l,
+			lheight=0.18,
+			lp="1535.2,987.67",
+			lwidth=2.65,
+			pencolor="#607D8B",
+			rankdir=LR,
+			shape=box,
+			style=filled
+		];
+		subgraph "cluster_EVENTING AND STATE" {
+			graph [bb="1440,545.9,1587,748.25",
+				bgcolor="#FFF8E1",
+				color="#FFF8E1",
+				fontname="Sans-Serif",
+				fontsize=12,
+				label="EVENTING AND STATE",
+				labeljust=l,
+				lheight=0.18,
+				lp="1513.2,737.88",
+				lwidth=1.81,
+				pencolor="#607D8B",
+				rankdir=LR,
+				shape=box,
+				style=filled
+			];
+			ce38edf005fe46a89ac661ec9ec35d72	[height=2.3,
+				image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/inmemory/\
+redis.png",
+				label="redis
+(internal only)",
+				pos="1498,636.7",
+				shape=none];
+		}
+		e97f4578af704252bc3e9d7840531112	[height=1.9,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/compute/\
+server.png",
+			label="training-api",
+			pos="1581,900.9",
+			shape=none];
+		e97f4578af704252bc3e9d7840531112 -> ce38edf005fe46a89ac661ec9ec35d72	[dir=forward,
+			fontcolor="#2D3436",
+			fontname="Sans-Serif",
+			fontsize=13,
+			label="job state SET/GET
+Redis Pub/Sub",
+			lp="1553.9,776",
+			pos="e,1539.5,719.4 1539.5,832.52 1539.5,832.52 1539.5,730.91 1539.5,730.91"];
+	}
+	subgraph "cluster_OPTIONAL PROFILE SERVICES" {
+		graph [bb="1678,267.3,1953,748.25",
+			bgcolor="#E0F7FA",
+			color="#E0F7FA",
+			fontname="Sans-Serif",
+			fontsize=12,
+			label="OPTIONAL PROFILE SERVICES",
+			labeljust=l,
+			lheight=0.18,
+			lp="1776,737.88",
+			lwidth=2.50,
+			pencolor="#607D8B",
+			rankdir=LR,
+			shape=box,
+			style=filled
+		];
+		"287235cef7eb426dbcfcd6b100574caf"	[height=2.3,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/container/\
+docker.png",
+			label="trainer
+(profile: train)",
+			pos="1736,636.7",
+			shape=none];
+		"6696d139ded548d5a791cefe3cd86a0f"	[height=2.3,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/container/\
+docker.png",
+			label="refiner
+(profile: refine)",
+			pos="1895,636.7",
+			shape=none];
+		"0f91439319964199aca96f8dd6c6780e"	[height=2.3,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/onprem/container/\
+docker.png",
+			label="ollama
+(profile: refine-container)",
+			pos="1895,358.1",
+			shape=none];
+		"6696d139ded548d5a791cefe3cd86a0f" -> "0f91439319964199aca96f8dd6c6780e"	[dir=forward,
+			fontcolor="#2D3436",
+			fontname="Sans-Serif",
+			fontsize=13,
+			label="LLM calls
+http://ollama:11434",
+			lp="1888.2,497.4",
+			pos="e,1911.8,440.83 1911.8,554.24 1911.8,554.24 1911.8,452.34 1911.8,452.34"];
+	}
+	subgraph "cluster_SHARED VOLUMES" {
+		graph [bb="1615,31,1890,204.55",
+			bgcolor="#FFF3E0",
+			color="#FFF3E0",
+			fontname="Sans-Serif",
+			fontsize=12,
+			label="SHARED VOLUMES",
+			labeljust=l,
+			lheight=0.18,
+			lp="1680,194.17",
+			lwidth=1.58,
+			pencolor="#607D8B",
+			rankdir=LR,
+			shape=box,
+			style=filled
+		];
+		"2d92ad50e2ec4889aeb65639af6ba264"	[height=1.9,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/generic/storage/\
+storage.png",
+			label=model_artifacts,
+			pos="1673,107.4",
+			shape=none];
+		ddfecad7edcc42ec898f5cced0582fdd	[height=1.9,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/generic/storage/\
+storage.png",
+			label=ollama_data,
+			pos="1832,107.4",
+			shape=none];
+	}
+	subgraph "cluster_OBSERVABILITY AND OPS CONTEXT" {
+		graph [bb="1673,1346.6,1948,1577.8",
+			bgcolor="#ECEFF1",
+			color="#ECEFF1",
+			fontname="Sans-Serif",
+			fontsize=12,
+			label="OBSERVABILITY AND OPS CONTEXT",
+			labeljust=l,
+			lheight=0.18,
+			lp="1787.1,1567.4",
+			lwidth=2.95,
+			pencolor="#607D8B",
+			rankdir=LR,
+			shape=box,
+			style=filled
+		];
+		a147337f62c548d994b8f7a90e8318b0	[height=2.7,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/generic/compute/\
+rack.png",
+			label="INVARIANT
+Gateway is the only public
+application entrypoint",
+			pos="1731,1451.8",
+			shape=none];
+		"3fae8b382d82498faa019d9193290c38"	[height=2.7,
+			image="/Users/talo/www/docker-compose-ai-gateway/docs/architecture-diagrams/venv/lib/python3.13/site-packages/resources/generic/compute/\
+rack.png",
+			label="PROJECT_CONFIG.yaml
+-> scripts/generate_env.py
+-> env/.env.dev",
+			pos="1890,1451.8",
+			shape=none];
+	}
+	a7dbc789d31744f699a211aae6606b2a -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="GET /, POST /api/request",
+		lp="1600.4,1298.1",
+		pos="e,1091.8,1164 966.94,1369.3 966.94,1284.3 966.94,1164 966.94,1164 966.94,1164 1080.3,1164 1080.3,1164"];
+	a7dbc789d31744f699a211aae6606b2a -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="POST /api/train",
+		lp="1416.4,1298.1",
+		pos="e,1091.8,1192 979.17,1369.2 979.17,1293.2 979.17,1192 979.17,1192 979.17,1192 1080.3,1192 1080.3,1192"];
+	a7dbc789d31744f699a211aae6606b2a -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="POST /api/refine/relabel",
+		lp="589.25,1298.1",
+		pos="e,1091.8,1178 973.06,1369.3 973.06,1288.7 973.06,1178 973.06,1178 973.06,1178 1080.3,1178 1080.3,1178"];
+	a7dbc789d31744f699a211aae6606b2a -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="POST /api/refine/augment",
+		lp="800.88,1298.1",
+		pos="e,1091.8,1137 954.71,1369.1 954.71,1275.8 954.71,1137 954.71,1137 954.71,1137 1080.3,1137 1080.3,1137"];
+	a7dbc789d31744f699a211aae6606b2a -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="POST /api/refine/promote",
+		lp="1016.4,1298.1",
+		pos="e,1092,1151 960.83,1369.2 960.83,1280.2 960.83,1151 960.83,1151 960.83,1151 1080.5,1151 1080.5,1151"];
+	a7dbc789d31744f699a211aae6606b2a -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="EventSource
+GET /api/*/events/{job_id}",
+		lp="1231.5,1298.1",
+		pos="e,1092,1205 985.29,1369.3 985.29,1297.5 985.29,1205 985.29,1205 985.29,1205 1080.5,1205 1080.5,1205"];
+	"3a9afa36ae8d44bf8f492c4ab541b8cb" -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="curl / scripts",
+		lp="419,1298.1",
+		pos="e,1091.7,1123 811,1369.3 811,1271.9 811,1123 811,1123 811,1123 1080.2,1123 1080.2,1123"];
+	a5a45e99ffd5463e9cd52110214ffa05 -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		pos="e,1091.7,1110 384,1369.1 384,1267.9 384,1110 384,1110 384,1110 1080.2,1110 1080.2,1110"];
+	"848e03a206e540618c64a1caf630a798" -> ea7b0acee1db457badca141d2640bb28	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		pos="e,1291.8,969.15 225,1369.5 225,1250.6 225,1045 225,1045 225,1045 1291.8,1045 1291.8,1045 1291.8,1045 1291.8,980.67 1291.8,980.67"];
+	"6428d4aa9e0746179c966cd4371f066e" -> "0f91439319964199aca96f8dd6c6780e"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		pos="e,1844.7,358 66,1369.1 66,1114.3 66,358 66,358 66,358 1833.1,358 1833.1,358"];
+	e99bd20646ad4506a5f81ef114bb7355 -> e97f4578af704252bc3e9d7840531112	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="proxy train/refine/promote
+and SSE",
+		lp="1839.5,1025.8",
+		pos="e,1581,969.24 1192.4,1151 1307.7,1151 1581,1151 1581,1151 1581,1151 1581,980.75 1581,980.75"];
+	ea7b0acee1db457badca141d2640bb28 -> "2d92ad50e2ec4889aeb65639af6ba264"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="read model.joblib",
+		lp="1347,497.4",
+		pos="e,1622.7,107 1317,832.53 1317,639.95 1317,107 1317,107 1317,107 1611.2,107 1611.2,107",
+		style=dashed];
+	e97f4578af704252bc3e9d7840531112 -> "287235cef7eb426dbcfcd6b100574caf"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="docker compose run --rm",
+		lp="1747.6,776",
+		pos="e,1685.7,637 1628.5,832.6 1628.5,754.4 1628.5,637 1628.5,637 1628.5,637 1674.2,637 1674.2,637"];
+	e97f4578af704252bc3e9d7840531112 -> "6696d139ded548d5a791cefe3cd86a0f"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="docker compose run --rm",
+		lp="1959.6,776",
+		pos="e,1908.5,719.4 1631.1,878 1722.8,878 1908.5,878 1908.5,878 1908.5,878 1908.5,730.92 1908.5,730.92"];
+	e97f4578af704252bc3e9d7840531112 -> "2d92ad50e2ec4889aeb65639af6ba264"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="read artifacts
+for results/promote",
+		lp="2136.9,497.4",
+		pos="e,1625.5,175.58 1625.5,832.56 1625.5,832.56 1625.5,187.09 1625.5,187.09"];
+	"287235cef7eb426dbcfcd6b100574caf" -> "2d92ad50e2ec4889aeb65639af6ba264"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="write metrics/model",
+		lp="1499.4,358.1",
+		pos="e,1698.2,175.65 1698.2,554 1698.2,554 1698.2,187.16 1698.2,187.16"];
+	"6696d139ded548d5a791cefe3cd86a0f" -> "2d92ad50e2ec4889aeb65639af6ba264"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="read/write datasets",
+		lp="1730,358.1",
+		pos="e,1710.8,175.71 1878.2,554.22 1878.2,523.98 1878.2,497 1878.2,497 1878.2,497 1710.8,497 1710.8,497 1710.8,497 1710.8,187.22 1710.8,\
+187.22"];
+	"0f91439319964199aca96f8dd6c6780e" -> ddfecad7edcc42ec898f5cced0582fdd	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label="persist models",
+		lp="2217.1,225.55",
+		pos="e,1863.5,175.47 1863.5,275.32 1863.5,275.32 1863.5,186.98 1863.5,186.98"];
+	a147337f62c548d994b8f7a90e8318b0 -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		pos="e,1142,1219 1680.8,1362 1538.3,1362 1142,1362 1142,1362 1142,1362 1142,1230.5 1142,1230.5",
+		style=dashed];
+	"3fae8b382d82498faa019d9193290c38" -> e99bd20646ad4506a5f81ef114bb7355	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		label=env_file,
+		lp="1827.2,1298.1",
+		pos="e,1192.2,1185 1860.6,1354.7 1860.6,1278.4 1860.6,1185 1860.6,1185 1860.6,1185 1203.8,1185 1203.8,1185",
+		style=dashed];
+	"3fae8b382d82498faa019d9193290c38" -> ea7b0acee1db457badca141d2640bb28	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		pos="e,1342.2,969.29 1876.5,1354.7 1876.5,1223.9 1876.5,1007 1876.5,1007 1876.5,1007 1342.2,1007 1342.2,1007 1342.2,1007 1342.2,980.81 \
+1342.2,980.81",
+		style=dashed];
+	"3fae8b382d82498faa019d9193290c38" -> e97f4578af704252bc3e9d7840531112	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		pos="e,1631.4,924 1892.5,1354.7 1892.5,1202.2 1892.5,924 1892.5,924 1892.5,924 1642.9,924 1642.9,924",
+		style=dashed];
+	"3fae8b382d82498faa019d9193290c38" -> "6696d139ded548d5a791cefe3cd86a0f"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		pos="e,1924.4,719.38 1924.4,1354.7 1924.4,1354.7 1924.4,730.89 1924.4,730.89",
+		style=dashed];
+	"3fae8b382d82498faa019d9193290c38" -> "0f91439319964199aca96f8dd6c6780e"	[dir=forward,
+		fontcolor="#2D3436",
+		fontname="Sans-Serif",
+		fontsize=13,
+		pos="e,1945.1,358 1940.2,1452 1953.1,1452 1963.4,1452 1963.4,1452 1963.4,1452 1963.4,358 1963.4,358 1963.4,358 1956.6,358 1956.6,358",
+		style=dashed];
+}
