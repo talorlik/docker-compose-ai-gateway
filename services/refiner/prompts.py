@@ -125,9 +125,22 @@ Generate {n} synthetic user prompts that would correctly be classified as
 
 ## TASK
 1. Consider the intent label: {label}
-2. Generate {n} diverse, realistic user prompts (short queries or commands)
-3. Each example should be clearly classifiable as {label}
-4. Vary phrasing, length, and style
+2. Generate exactly {n} diverse, realistic user prompts (short queries or
+   commands)
+3. Use synonyms and close paraphrases naturally (for example: create/make,
+   check/inspect, find/look up, troubleshoot/debug)
+4. Include intent-revealing phrases that imply routing even without explicit
+   keywords (for example: "create me a logo" -> image, "what services are
+   running" -> ops)
+5. For label "ops", cover a wide range of technical domains:
+   DevOps, IT support, systems administration, cloud operations, and AI/ML ops
+6. For label "ops", include a mix of:
+   - full commands (for example: "kubectl get pods -A")
+   - partial command fragments (for example: "kubectl logs", "docker ps")
+   - natural-language operational requests (for example: "check GPU memory usage")
+7. Each example should be clearly classifiable as {label}
+8. Avoid duplicates and near-duplicates within the generated set
+9. Vary phrasing, length, and style
 
 ## OUTPUT
 Respond with valid JSON only. No markdown, no code fences, no explanation.
@@ -138,4 +151,4 @@ Schema: [{{"text": "<prompt>", "label": "{label}"}}, ...]
 - **label**: Must be one of: {labels_str}
 - **text**: Short user prompt (max ~100 chars); no newlines
 - Output must be a JSON array; no extra text before or after
-- Examples must be distinct from each other"""
+- Examples must be distinct; avoid near-duplicates with minor wording changes"""

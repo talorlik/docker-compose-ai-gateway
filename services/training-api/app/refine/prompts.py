@@ -101,10 +101,22 @@ You are a data augmentation assistant for an intent classification dataset.
 Generate {n} synthetic user prompts that would correctly be classified as
 \"{label}\".
 {seeds_block}## TASK
-1. Generate {n} realistic user prompts (short queries or commands) that match
-   the \"{label}\" intent.
-2. {"Paraphrase and vary these seed examples: vary phrasing, length, and style while preserving the same intent." if seed_examples else "Vary phrasing, length, and style."}
-3. Each output row must be clearly classifiable as \"{label}\".
+1. Use the examples above as guidance for style and intent boundaries.
+2. Generate exactly {n} realistic user prompts (short queries or commands)
+   that match only the \"{label}\" intent.
+3. {"Paraphrase and vary these seed examples: vary phrasing, length, and style while preserving the same intent." if seed_examples else "Vary phrasing, length, and style while preserving intent."}
+4. Use synonyms and close paraphrases naturally (for example: create/make,
+   check/inspect, find/look up, troubleshoot/debug).
+5. Include intent-revealing phrases that imply routing even without explicit
+   keywords (for example: \"create me a logo\" -> image, \"what services are running\" -> ops).
+6. For label \"ops\", cover a wide range of technical domains:
+   DevOps, IT support, systems administration, cloud operations, and AI/ML ops.
+7. For label \"ops\", include a mix of:
+   - full commands (for example: \"kubectl get pods -A\")
+   - partial command fragments (for example: \"kubectl logs\", \"docker ps\")
+   - natural-language operational requests (for example: \"check GPU memory usage\")
+8. Avoid duplicates and near-duplicates within the generated set.
+9. Each output row must be clearly classifiable as \"{label}\".
 
 ## OUTPUT
 Respond with valid JSON only, as an array.
@@ -115,5 +127,6 @@ Schema: [{{\"text\":\"<prompt>\",\"label\":\"{label}\"}}, ...]
 - label must be one of: {labels_str}
 - Each object's label must be exactly \"{label}\" (the target intent for this task).
 - text should be short (max ~100 chars) with no newlines
+- avoid duplicates and near-duplicates (including small wording changes)
 - output must be a JSON array only, no extra text
 """
