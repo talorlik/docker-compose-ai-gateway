@@ -60,7 +60,7 @@ Implement the Python logic that runs the trainer via Docker Compose and reads ar
 | 3.1 | Add jobs/runner module with run_train(): docker compose run trainer from project dir. | Document mounts; add in later batch. | [x] |
 | 3.2 | On success read metrics.json and misclassified.csv; parse to result dict. | accuracy, report, matrix, misclassified. | [x] |
 | 3.3 | On failure, raise or return error so callers can SET failed and PUBLISH. | | [x] |
-| 3.4 | Add process timeout (e.g. 1h) around compose run. | | [x] |
+| 3.4 | Add process timeout (1h / `RUN_TRAIN_TIMEOUT_SECONDS=3600`) around compose run. | | [x] |
 
 **Batch 3 done when:** run_train() runs trainer via Compose and returns metrics +
 misclassified or error.
@@ -74,7 +74,7 @@ Implement run_refine() and run_promote() and a CLI entrypoint so the same code i
 | # | Task | Notes | Done |
 | --- | --- | --- | --- |
 | 4.1 | run_refine(): compose run refiner; read report, CSVs; run trainer for metrics_after. | See TECH doc. | [x] |
-| 4.2 | On refiner failure, return/raise error for SET/PUBLISH. Apply 1h timeout. | | [x] |
+| 4.2 | On refiner failure, return/raise error for SET/PUBLISH. Apply 10 min timeout (`RUN_REFINE_TIMEOUT_SECONDS=600`). | | [x] |
 | 4.3 | run_promote(): require train_candidate; copy to promote target; compare metrics; return promoted, message, acc. | 400 if missing; 200 with promoted false if no improvement. | [x] |
 | 4.4 | Add CLI (app/cli.py): subcommands train, refine, promote; no Redis/HTTP. | For compose run. | [x] |
 | 4.5 | Dockerfile/compose CMD override: training-api train/refine/promote runs python -m app.cli. | | [x] |
@@ -127,7 +127,7 @@ Add full training-api service mounts in Compose and gateway proxy for all traini
 | 7.3 | Proxy POST /api/train to training-api POST /train; normal timeout. | | [x] |
 | 7.4 | Proxy GET /api/train/status/{job_id} and GET /api/train/last. | | [x] |
 | 7.5 | Proxy POST /api/refine, GET /api/refine/status, GET /api/refine/last. | | [x] |
-| 7.6 | Proxy POST /api/refine/promote with long timeout (e.g. 5 min). | | [x] |
+| 7.6 | Proxy POST /api/refine/promote with long timeout (5 min / 300s). | | [x] |
 | 7.7 | Training-api and Redis on internal network only. | | [x] |
 
 **Batch 7 done when:** Gateway proxies train, refine, status, last, promote (SSE in Batch 8).

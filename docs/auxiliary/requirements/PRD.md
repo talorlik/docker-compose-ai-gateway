@@ -88,7 +88,7 @@ requirements.
 | FR-013 | User requests SHALL be submitted via UI or curl to `gateway /api/request`. | Must |
 | FR-014 | The gateway SHALL call `ai-router /classify` with the request text. | Must |
 | FR-015 | The ai-router SHALL return `{route, confidence, explanation, trace_append}`. | Must |
-| FR-016 | The gateway SHALL evaluate a configurable confidence threshold (e.g., T_route = 0.55). | Must |
+| FR-016 | The gateway SHALL evaluate a configurable confidence threshold (`T_route`; runtime value 0.60 via Compose, code fallback 0.55). | Must |
 | FR-017 | If route is `unknown` or confidence is below threshold, the gateway SHALL return a 404-equivalent response without proxying. | Must |
 | FR-018 | Otherwise, the gateway SHALL proxy to the selected backend `POST /handle`. | Must |
 | FR-019 | The gateway SHALL aggregate all trace entries and return the complete response with routing metadata. | Must |
@@ -110,7 +110,7 @@ requirements.
 | ID | Requirement | Priority |
 | --- | --- | --- |
 | FR-025 | The model SHALL produce probabilities for all four labels. | Must |
-| FR-026 | The gateway SHALL use a configurable confidence threshold (e.g., T_route = 0.55) for non-unknown routes. | Must |
+| FR-026 | The gateway SHALL use a configurable confidence threshold (`T_route`; runtime value 0.60 via Compose, code fallback 0.55) for non-unknown routes. | Must |
 | FR-027 | The system MAY support an optional margin check: if the difference between the top two routes is below a threshold, treat as unknown. | Should |
 | FR-028 | If route is `unknown` or confidence is too low, the gateway SHALL return 404 without proxying to any backend. | Must |
 

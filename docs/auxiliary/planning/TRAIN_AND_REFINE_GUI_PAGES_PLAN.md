@@ -104,7 +104,7 @@ flowchart LR
   the backend publishes to Redis; the client is notified via SSE and updates the
   UI once
 - **Redis keys**: Per-job state at `job:train:{job_id}` / `job:refine:{job_id}`
-  (status, result, error) for persistence and optional GET status; TTL (e.g. 24h)
+  (status, result, error) for persistence and optional GET status; TTL 24h
 - **Redis Pub/Sub**: On job completion, training-api PUBLISHes to channel
   `job:train:events:{job_id}` or `job:refine:events:{job_id}` with final payload
   (e.g. `{"status":"completed","result":{...}}` or `{"status":"failed","error":"..."}`)
@@ -149,7 +149,7 @@ flowchart LR
 
 - Store per-job state at `job:train:{job_id}` / `job:refine:{job_id}` with JSON:
   `{ "status", "result" (when completed), "error" (when failed), "created_at" }`
-- TTL (e.g. 24h) on job keys
+- TTL 24h on job keys
 - On job completion, background task PUBLISHes to channel
   `job:train:events:{job_id}` or `job:refine:events:{job_id}` with same payload
 - Redis is its own service in the same Compose stack. Training-api connects via
@@ -192,7 +192,7 @@ flowchart LR
 | GET /api/refine/events/{job_id} | GET /refine/events/{job_id} | Streaming proxy (SSE) |
 | GET /api/refine/status/{job_id} | GET /refine/status/{job_id} | |
 | GET /api/refine/last | GET /refine/last | |
-| POST /api/refine/promote | POST /refine/promote | Longer timeout (e.g. 5 min) |
+| POST /api/refine/promote | POST /refine/promote | Longer timeout (5 min / 300s) |
 
 - **Streaming proxy**: For GET .../events/{job_id}, gateway must stream SSE
   response from training-api to client (EventSource on gateway origin)
@@ -387,14 +387,15 @@ flowchart LR
 
 ### 10.2 Job Execution
 
-- Apply process timeout (e.g. 1h) for background train/refine jobs so a stuck
-  run does not leak resources
+- Apply process timeout of 1h for train jobs (`RUN_TRAIN_TIMEOUT_SECONDS=3600`)
+  and 10 min for refine jobs (`RUN_REFINE_TIMEOUT_SECONDS=600`) so a stuck run
+  does not leak resources
 - Set Redis TTL on job keys to limit storage
 
 ### 10.3 Gateway
 
-- Normal proxy timeouts (no long 300s) except for POST /api/refine/promote
-  (e.g. 5 min)
+- Normal proxy timeouts (30s via `REQUEST_TIMEOUT`) except for
+  POST /api/refine/promote (5 min / 300s via `PROMOTE_TIMEOUT`)
 - Consider response size limits for status payload when result is large
 
 ### 10.4 Validation
@@ -462,7 +463,7 @@ flowchart LR
   /api/train/status/{job_id}, /api/train/last
 - [ ] Add proxy routes POST/GET /api/refine, /api/refine/events/{job_id},
   /api/refine/status/{job_id}, /api/refine/last
-- [ ] Add proxy route POST /api/refine/promote with longer timeout (e.g. 5 min)
+- [ ] Add proxy route POST /api/refine/promote with longer timeout (5 min / 300s)
 - [ ] Implement streaming proxy for SSE endpoints (GET .../events/{job_id}) for
   EventSource on gateway
 
@@ -501,8 +502,8 @@ flowchart LR
   training-api train` and `training-api refine` if applicable
 - [ ] Restrict training-api and Redis to internal network; do not expose Docker
   socket or Redis publicly
-- [ ] Apply process timeout for background train/refine jobs; set Redis TTL on job
-  keys
+- [ ] Apply process timeout (train 1h/3600s, refine 10 min/600s) for background
+  jobs; set Redis TTL (24h/86400s) on job keys
 - [ ] Run Snyk (or project security check) after adding new deps and Dockerfile
 - [ ] Document Redis and training-api in stack; document Promote button and CLI
   trigger; optional note Ollama must be up for Refine

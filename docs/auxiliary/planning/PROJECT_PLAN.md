@@ -107,7 +107,8 @@ health checks - see Section 9
 **Routing Policy:**
 
 - Model produces probabilities for all 4 labels
-- Gateway uses confidence threshold (`T_route`, e.g., 0.55) for non-unknown routes
+- Gateway uses confidence threshold (`T_route`; runtime 0.60 via Compose,
+  code fallback 0.55) for non-unknown routes
 - Optional margin check: if difference between top two routes < threshold → treat
 as unknown
 - If route is `unknown` or confidence too low → return 404 without proxying to backend

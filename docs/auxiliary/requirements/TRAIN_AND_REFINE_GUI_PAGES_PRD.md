@@ -61,7 +61,7 @@ service, Redis-backed job state, and event-driven completion via SSE.
 | ID | Requirement | Priority |
 | --- | --- | --- |
 | TR-FR-006 | When a job is started, the API SHALL return `job_id` immediately; when the job completes, the backend SHALL publish to Redis and the client SHALL be notified via SSE. | Must |
-| TR-FR-007 | Per-job state SHALL be stored at Redis keys `job:train:{job_id}` and `job:refine:{job_id}` (status, result, error) with TTL (e.g. 24h). | Must |
+| TR-FR-007 | Per-job state SHALL be stored at Redis keys `job:train:{job_id}` and `job:refine:{job_id}` (status, result, error) with TTL 24h (86400s). | Must |
 | TR-FR-008 | On job completion, training-api SHALL PUBLISH to channel `job:train:events:{job_id}` or `job:refine:events:{job_id}` with final payload (e.g. status completed/ failed and result or error). | Must |
 | TR-FR-009 | Training-api SHALL expose GET `/train/events/{job_id}` and GET `/refine/events/{job_id}` as SSE streams that SUBSCRIBE to the Redis channel and send the first message to the client then close the stream. | Must |
 | TR-FR-010 | The frontend SHALL use EventSource for SSE; SHALL NOT poll for job status. | Must |
@@ -83,7 +83,7 @@ service, Redis-backed job state, and event-driven completion via SSE.
 | ID | Requirement | Priority |
 | --- | --- | --- |
 | TR-FR-016 | Per-job state SHALL be stored at `job:train:{job_id}` / `job:refine:{job_id}` as JSON: status, result (when completed), error (when failed), created_at. | Must |
-| TR-FR-017 | Job keys SHALL have a TTL (e.g. 24h). | Must |
+| TR-FR-017 | Job keys SHALL have a TTL of 24h (86400s). | Must |
 | TR-FR-018 | On job completion, a background task SHALL PUBLISH to the corresponding Redis events channel with the same payload. | Must |
 | TR-FR-019 | Training-api SHALL connect to Redis via the Redis service name (e.g. `redis:6379`) or REDIS_URL / REDIS_HOST / REDIS_PORT. | Must |
 
@@ -114,7 +114,7 @@ service, Redis-backed job state, and event-driven completion via SSE.
 | TR-FR-028 | The gateway SHALL proxy GET /api/train/events/{job_id} to training-api GET /train/events/{job_id} as a streaming proxy (SSE). | Must |
 | TR-FR-029 | The gateway SHALL proxy GET /api/train/status/{job_id} and GET /api/train/last to the corresponding training-api endpoints. | Must |
 | TR-FR-030 | The gateway SHALL proxy POST /api/refine/relabel, POST /api/refine/augment, GET /api/refine/relabel/events/{job_id}, GET /api/refine/augment/events/{job_id} to training-api. | Must |
-| TR-FR-031 | The gateway SHALL proxy POST /api/refine/promote with a longer timeout (e.g. 5 min). | Must |
+| TR-FR-031 | The gateway SHALL proxy POST /api/refine/promote with a longer timeout of 5 min (300s). | Must |
 | TR-FR-032 | For GET .../events/{job_id}, the gateway SHALL stream the SSE response from training-api to the client so EventSource works against the gateway origin. | Must |
 
 ## 7. Frontend Requirements
@@ -207,9 +207,9 @@ service, Redis-backed job state, and event-driven completion via SSE.
 | --- | --- | --- |
 | TR-NFR-005 | Training-api and Redis SHALL be restricted to the internal network; Docker socket and Redis SHALL NOT be exposed publicly. | Must |
 | TR-NFR-006 | The gateway SHALL proxy to training-api on the internal network only. | Must |
-| TR-NFR-007 | A process timeout (e.g. 1h) SHALL be applied for background train/refine jobs so a stuck run does not leak resources. | Must |
+| TR-NFR-007 | Process timeouts SHALL be applied for background jobs: train 1h (`RUN_TRAIN_TIMEOUT_SECONDS=3600`) and refine 10 min (`RUN_REFINE_TIMEOUT_SECONDS=600`) so a stuck run does not leak resources. | Must |
 | TR-NFR-008 | Redis TTL on job keys SHALL be set to limit storage. | Must |
-| TR-NFR-009 | Gateway proxy timeouts SHALL be normal except for POST /api/refine/promote (e.g. 5 min). | Must |
+| TR-NFR-009 | Gateway proxy timeouts SHALL be normal (`REQUEST_TIMEOUT=30`) except for POST /api/refine/promote (`PROMOTE_TIMEOUT=300`, 5 min). | Must |
 | TR-NFR-010 | After adding new Python dependencies (e.g. redis) and Dockerfile, the project SHALL run Snyk or project security check per project rules. | Must |
 | TR-NFR-011 | Redis and training-api SHALL be documented in the stack; the Promote button and CLI trigger SHALL be documented. | Must |
 

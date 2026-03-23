@@ -64,7 +64,7 @@ to backends, aggregates trace and timings.
 | --- | --- | --- | --- | --- |
 | 4.1 | Gateway: generate `request_id` (UUID) if client does not send it; pass to ai-router and backends. | FR-029, FR-059 | TECH-11.1 | x |
 | 4.2 | Gateway: implement call to ai-router `POST /classify` with `request_id`, `text`; parse `route`, `confidence`, `explanation`, `trace_append`. | FR-003, FR-014, FR-015 | TECH-10, TECH-14.3 | x |
-| 4.3 | Gateway: add configurable confidence threshold (e.g. T_route=0.55). If route is `unknown` or confidence &lt; threshold, return 404-equivalent with `request_id`, `route`, `confidence`, `message`, `trace` (no backend call). | FR-006, FR-016, FR-017, FR-026, FR-028, FR-037 | TECH-5, TECH-6, TECH-9, TECH-14.4, TECH-19.1 | x |
+| 4.3 | Gateway: add configurable confidence threshold (runtime `T_route=0.60` via Compose; code fallback `0.55`). If route is `unknown` or confidence &lt; threshold, return 404-equivalent with `request_id`, `route`, `confidence`, `message`, `trace` (no backend call). | FR-006, FR-016, FR-017, FR-026, FR-028, FR-037 | TECH-5, TECH-6, TECH-9, TECH-14.4, TECH-19.1 | x |
 | 4.4 | Gateway: map route to backend URL and proxy `POST /handle` with `request_id`, `text`; collect backend `trace_append`. | FR-004, FR-018 | TECH-10.2, TECH-14.3 | x |
 | 4.5 | Gateway: aggregate trace (gateway + ai-router + backend entries); add `timings_ms` (classify, proxy, total); return `request_id`, `route`, `confidence`, `explanation`, `trace`, `backend_response`, `timings_ms`. | FR-005, FR-019, FR-032, FR-036, FR-038 | TECH-11.3, TECH-11.4, TECH-14.3 | x |
 | 4.6 | Add `GET /routes` returning list of routes and backend URLs. | FR-061 | TECH-14.6 | x |

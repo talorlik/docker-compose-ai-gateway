@@ -180,8 +180,9 @@ unknown (404).
 
 **Implementation steps:**
 
-1. **Env vars (e.g. in compose):** `T_ROUTE=0.60`, `T_MARGIN=0.10`. Parse as
-   floats in gateway startup and validate in [0.0, 1.0].
+1. **Env vars (in compose):** `T_ROUTE=0.60`, `T_MARGIN=0.10`. Parse as
+   floats in gateway startup and validate in [0.0, 1.0]. Code fallback defaults
+   are `T_ROUTE=0.55` and `T_MARGIN=0.10`.
 2. **ai-router response:** Gateway must receive full probability distribution
    (or at least best_route among non-unknown, `p_best`, `p_second`, `p_unknown`).
    Best practice: return full probability map from ai-router.
@@ -200,15 +201,15 @@ unknown (404).
    thresholds if too many valid prompts become unknown. Restart gateway after
    env changes; no retraining needed.
 
-**Note:** Thresholds are **not** implemented in the Python code you have so
-far. `train.py` and ai-router produce probabilities; the gateway must
-implement the decision logic that uses `T_ROUTE` and `T_MARGIN` to route or
-return 404.
+**Note:** Threshold and margin checks are implemented in
+`services/gateway/app/main.py`. `train.py` and ai-router produce
+probabilities; the gateway applies decision policy with `T_ROUTE` and
+`T_MARGIN` and returns 404 for unknown/low-confidence/low-margin cases.
 
 **Example gateway policy (pseudocode):**
 
 ```python
-T_ROUTE = float(os.getenv("T_ROUTE", 0.60))
+T_ROUTE = float(os.getenv("T_ROUTE", 0.55))
 T_MARGIN = float(os.getenv("T_MARGIN", 0.10))
 
 non_unknown = {k: v for k, v in probs.items() if k != "unknown"}

@@ -116,7 +116,7 @@ flowchart LR
 - **Key pattern:** `job:train:{job_id}` and `job:refine:{job_id}`.
 - **Value:** JSON: `{ "status", "result" (when completed), "error" (when failed),
   "created_at" }`.
-- **TTL:** e.g. 24h to limit storage.
+- **TTL:** 24h (86400s) to limit storage.
 
 ### 3.2 Redis Pub/Sub
 
@@ -185,8 +185,8 @@ flowchart LR
   outputs), SET Redis key with status "completed" and result payload, PUBLISH
   to events channel, then exit.
 - On failure: SET Redis key with status "failed" and error, PUBLISH to events
-  channel. Apply process timeout (e.g. 1h) so a stuck run does not leak
-  resources.
+  channel. Apply process timeout (train 1h/3600s, refine 10 min/600s) so a
+  stuck run does not leak resources.
 
 ## 5. Gateway Proxy
 <!-- Tasks: B7 B8 -->
@@ -208,7 +208,7 @@ flowchart LR
 | GET /api/refine/relabel/events/{job_id} | GET /refine/relabel/events/{job_id} | Streaming proxy (SSE) |
 | POST /api/refine/augment | POST /refine/augment | Normal timeout |
 | GET /api/refine/augment/events/{job_id} | GET /refine/augment/events/{job_id} | Streaming proxy (SSE) |
-| POST /api/refine/promote | POST /refine/promote | Longer timeout (e.g. 5 min) |
+| POST /api/refine/promote | POST /refine/promote | Longer timeout (5 min / 300s) |
 
 ### 5.3 Streaming Proxy
 
@@ -376,11 +376,12 @@ flowchart LR
 
 - Process timeout: 1h for train jobs; 10 min for refine jobs
   (`RUN_REFINE_TIMEOUT_SECONDS=600`).
-- Redis TTL on job keys (e.g. 24h) to limit storage.
+- Redis TTL on job keys is 24h (`JOB_STATE_TTL_SECONDS=86400`) to limit storage.
 
 ### 9.3 Gateway
 
-- Normal proxy timeouts except POST /api/refine/promote (e.g. 5 min).
+- Normal proxy timeouts (`REQUEST_TIMEOUT=30`) except POST /api/refine/promote
+  (`PROMOTE_TIMEOUT=300`, 5 min).
 - Consider response size limits for status payload when result is large.
 
 ### 9.4 Validation

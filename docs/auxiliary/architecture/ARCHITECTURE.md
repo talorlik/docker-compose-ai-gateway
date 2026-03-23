@@ -162,7 +162,8 @@ flowchart TB
   to training-api
   - `POST /api/refine/augment`, `GET /api/refine/augment/events/{job_id}` - Proxy
   to training-api
-  - `POST /api/refine/promote` - Proxy to training-api (longer timeout, e.g. 5 min)
+  - `POST /api/refine/promote` - Proxy to training-api
+    (longer timeout, 5 min / 300s)
 - **Responsibilities:**
   - Generate or accept `request_id` (UUID)
   - Call ai-router `POST /classify` with request text
@@ -335,7 +336,8 @@ per_label_recall.
 
 **Policy (gateway):**
 
-- `T_ROUTE` (default 0.60): minimum confidence to route
+- `T_ROUTE` (runtime 0.60 via Compose; code fallback 0.55): minimum
+  confidence to route
 - `T_MARGIN` (default 0.10): minimum gap between top-1 and top-2
 - If route is `unknown` or below threshold or margin: return 404, no proxy
 - Otherwise: proxy to backend
