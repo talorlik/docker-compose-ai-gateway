@@ -75,6 +75,8 @@ services:
       <<: *common-healthcheck
     logging:
       <<: *common-logging
+    ports:
+      - "127.0.0.1:8001:8000"
     volumes:
       - model_artifacts:/model:ro
 

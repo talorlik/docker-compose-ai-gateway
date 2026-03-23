@@ -472,9 +472,10 @@ one SSE event and renders result. No polling. See
 
 - **No external dependencies:** Runs fully offline; no cloud or third-party APIs
 - **Non-root runtime:** Services run as non-root user in containers (per NFR-016)
-- **Minimal surface:** Single exposed port (8000); refiner and trainer are
-  on-demand, not long-running; training-api and Redis are internal only (no
-  public ports)
+- **Minimal surface:** Two localhost-only exposed ports:
+  `127.0.0.1:8000` (gateway) and `127.0.0.1:8001` (ai-router debug endpoint);
+  refiner and trainer are on-demand, not long-running; training-api and Redis
+  are internal only (no public ports)
 - **Internal only:** Redis and training-api are not exposed publicly; gateway
   proxies to training-api on internal network
 

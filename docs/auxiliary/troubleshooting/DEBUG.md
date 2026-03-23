@@ -18,6 +18,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 COMPOSE_FILE="compose/docker-compose.yaml"
 GATEWAY_URL="http://localhost:8000"
+AI_ROUTER_URL="http://localhost:8001"
 ```
 
 ## Start and Stop the Stack
@@ -67,10 +68,84 @@ Route map (shows backend URLs).
 curl -s "$GATEWAY_URL/routes" | python3 -m json.tool
 ```
 
+Direct ai-router classify (bypass gateway; returns probabilities and top
+explanation tokens).
+
+```bash
+curl -s -X POST "http://localhost:8001/classify" \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"debug-1","text":"Kubectl get pods in namespace default"}' \
+  | python3 -m json.tool
+```
+
 Tail logs (add any service names you need).
 
 ```bash
 docker compose -f "$COMPOSE_FILE" logs -f gateway ai_router training-api refiner trainer redis ollama
+```
+
+## AI Router Debugging
+
+Check that `ai_router` is running and port `8001` is published.
+
+```bash
+docker compose -f "$COMPOSE_FILE" ps ai_router
+```
+
+Direct health check for `ai_router` (bypass gateway).
+
+```bash
+curl -s "$AI_ROUTER_URL/health" | python3 -m json.tool
+```
+
+Direct classify with full response fields.
+
+```bash
+curl -s -X POST "$AI_ROUTER_URL/classify" \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"debug-ai-router-1","text":"kubectl get pods in namespace default"}' \
+  | python3 -m json.tool
+```
+
+Show headers and status for `/classify` (useful for 4xx/5xx triage).
+
+```bash
+curl -sS -i -X POST "$AI_ROUTER_URL/classify" \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"debug-ai-router-2","text":"show current deployment health"}'
+```
+
+Validate input contract (missing `text` should return 422).
+
+```bash
+curl -sS -i -X POST "$AI_ROUTER_URL/classify" \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"debug-ai-router-3"}'
+```
+
+Tail only `ai_router` logs.
+
+```bash
+docker compose -f "$COMPOSE_FILE" logs -f ai_router
+```
+
+Inspect `MODEL_PATH` and model files inside `ai_router`.
+
+```bash
+docker compose -f "$COMPOSE_FILE" exec -T ai_router sh -lc '
+echo "MODEL_PATH=$MODEL_PATH"
+ls -la /model
+ls -la /app/model
+'
+```
+
+Probe internal service-to-service access from `gateway` to `ai_router`.
+
+```bash
+docker compose -f "$COMPOSE_FILE" exec -T gateway python - <<'PY'
+import urllib.request
+print(urllib.request.urlopen("http://ai_router:8000/health", timeout=5).read().decode())
+PY
 ```
 
 ## Inspect Model Artifacts (Most Important)
