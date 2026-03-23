@@ -6,11 +6,12 @@ Generate per-environment .env files from config/PROJECT_CONFIG.yaml.
 
 Usage:
 
+  python scripts/generate_env.py
   python scripts/generate_env.py dev
 
-This will read the "default" section, overlay the "dev" section, and write
-an env file at env/.env.dev containing flat KEY=VALUE pairs. Services can
-then consume this via docker compose env_file entries.
+If no environment is passed, the script reads ENV from the "default" section
+of PROJECT_CONFIG.yaml (falling back to "dev"), overlays that section on top
+of "default", and writes env/.env.<env> as flat KEY=VALUE pairs.
 """
 
 import argparse
@@ -80,21 +81,24 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate .env from PROJECT_CONFIG.yaml")
     parser.add_argument(
         "env",
+        nargs="?",
         help="Environment name (must match a section in PROJECT_CONFIG.yaml, e.g. dev, prod)",
     )
     args = parser.parse_args()
 
     config = load_project_config()
     default_section = config.get("default", {})
-    target_section = config.get(args.env)
+    env_name = args.env or default_section.get("ENV", "dev")
+    target_section = config.get(env_name)
     if target_section is None:
         raise SystemExit(
-            f"Environment {args.env!r} not found in PROJECT_CONFIG.yaml "
+            f"Environment {env_name!r} not found in PROJECT_CONFIG.yaml "
             f"(available: {', '.join(sorted(config.keys()))})"
         )
 
     merged = merge_env(default_section, target_section)
-    out_path = write_env_file(args.env, merged)
+    merged["ENV"] = str(env_name)
+    out_path = write_env_file(env_name, merged)
     print(f"Wrote {out_path.relative_to(REPO_ROOT)} with {len(merged)} entries")
     return 0
 

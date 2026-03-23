@@ -163,12 +163,13 @@ Before running refine-related commands in a new environment, generate the env
 file from the centralized configuration:
 
 ```bash
-python scripts/generate_env.py dev
+python scripts/generate_env.py
 ```
 
-This reads `config/PROJECT_CONFIG.yaml` (default and dev sections) and writes
-`env/.env.dev`, which is then consumed by Docker Compose via `env_file` so
-training-api and the refine pipeline receive consistent settings
+This reads `config/PROJECT_CONFIG.yaml`, selects the environment from
+`default.ENV` (fallback `dev`) unless overridden, and writes `env/.env.<env>`.
+Docker Compose then consumes that file via `env_file` so training-api and the
+refine pipeline receive consistent settings
 (`REDIS_URL`, `MODEL_ARTIFACTS_PATH`, `PROMOTE_TARGET_PATH`, `OLLAMA_URLS`,
 `OLLAMA_MODEL`, and `REFINER_*` values).
 

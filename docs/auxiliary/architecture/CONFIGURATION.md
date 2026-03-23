@@ -23,6 +23,10 @@ settings. It is organized by top-level environment keys:
 - `dev`: overrides for local development
 - `prod`: overrides for production
 
+`default` also defines `ENV` (for example `dev`), which is the default
+environment selector when generating env files and when Compose chooses
+`env/.env.<env>`.
+
 Typical keys include:
 
 - Logging and runtime:
@@ -93,16 +97,21 @@ for a specific environment.
 From the repository root:
 
 ```bash
-python scripts/generate_env.py dev
+python scripts/generate_env.py
 ```
 
 This command:
 
-- Loads `default` and `dev` sections from `PROJECT_CONFIG.yaml`
-- Merges them (`dev` overrides `default`)
-- Writes `env/.env.dev` with `KEY=VALUE` lines
+- Reads `default.ENV` from `PROJECT_CONFIG.yaml` (falls back to `dev`)
+- Loads `default` and the selected environment section
+- Merges them (environment section overrides `default`)
+- Writes `env/.env.<env>` with `KEY=VALUE` lines
 
-Repeat with a different environment name to generate `env/.env.prod` and so on.
+Override explicitly when needed:
+
+```bash
+python scripts/generate_env.py prod
+```
 
 ## 4. Docker Compose Integration
 
@@ -111,7 +120,7 @@ Repeat with a different environment name to generate `env/.env.prod` and so on.
 The base Compose file defines a small anchor for services that should consume
 the generated env file. For example, `training-api` uses:
 
-- `env_file: ../env/.env.dev` (via a shared anchor)
+- `env_file: ../env/.env.${ENV:-dev}` (via a shared anchor)
 - `environment: <<: *common-env` for a minimal set of inline defaults
 
 Other services can be wired the same way if they need centralized values.
@@ -120,14 +129,14 @@ Other services can be wired the same way if they need centralized values.
 
 - `compose/docker-compose.yaml`:
   - Core services, health checks, volumes, and profiles
-  - References `env/.env.dev` (or another env file) for runtime configuration
+  - References `env/.env.${ENV:-dev}` for runtime configuration
 - `compose/docker-compose.dev.yaml`:
   - Dev-only overrides (bind mounts, `uvicorn --reload`)
 
 Start the full stack in dev mode after generating the env file:
 
 ```bash
-python scripts/generate_env.py dev
+python scripts/generate_env.py
 
 docker compose \
   -f compose/docker-compose.yaml \
@@ -183,7 +192,7 @@ recommended pattern is:
 2. Regenerate the env file:
 
    ```bash
-   python scripts/generate_env.py dev
+   python scripts/generate_env.py
    ```
 
 3. Restart the relevant services via Docker Compose.

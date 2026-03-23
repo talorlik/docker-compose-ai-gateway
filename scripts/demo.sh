@@ -25,6 +25,7 @@ ensure_env() {
 
 load_runtime_config() {
   ensure_env
+  export ENV="${CONFIG_ENV}"
   export PROJECT_ENV_FILE="../env/.env.${CONFIG_ENV}"
   # shellcheck disable=SC1090
   source "${COMPOSE_DIR}/env/.env.${CONFIG_ENV}"

@@ -349,7 +349,7 @@ flowchart LR
 - **Env:** configuration is provided via env vars such as `REDIS_URL`,
   `MODEL_ARTIFACTS_PATH`, `PROMOTE_TARGET_PATH`, `OLLAMA_URLS`, `OLLAMA_MODEL`,
   and `REFINER_*`. These are populated from `config/PROJECT_CONFIG.yaml` by
-  generating env files (for example `env/.env.dev`) with
+  generating env files (for example `env/.env.<env>`) with
   `scripts/generate_env.py` and referencing them via Docker Compose `env_file`.
   Per-environment overrides should be done in `PROJECT_CONFIG.yaml`, not by
   editing Compose directly.

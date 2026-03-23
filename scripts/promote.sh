@@ -30,6 +30,7 @@ ensure_env() {
 cd "$COMPOSE_DIR"
 
 ensure_env
+export ENV="${CONFIG_ENV}"
 
 docker compose -f "$COMPOSE_FILE" --profile refine run --rm training-api promote
 

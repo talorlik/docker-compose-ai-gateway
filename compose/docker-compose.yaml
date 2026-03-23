@@ -7,7 +7,7 @@ volumes:
 
 x-env-file-defaults: &env-file-defaults
   env_file:
-    - ${PROJECT_ENV_FILE:-../env/.env.dev}
+    - ../env/.env.${ENV:-dev}
 
 x-common-env: &common-env
   LOG_LEVEL: info
@@ -37,6 +37,7 @@ services:
     build:
       context: ../services/gateway
       dockerfile: Dockerfile
+    <<: *env-file-defaults
     depends_on:
       ai_router:
         condition: service_healthy
@@ -50,13 +51,6 @@ services:
         condition: service_healthy
     environment:
       <<: *common-env
-      AI_ROUTER_URL: "http://ai_router:8000"
-      SEARCH_SERVICE_URL: "http://search_service:8000"
-      IMAGE_SERVICE_URL: "http://image_service:8000"
-      OPS_SERVICE_URL: "http://ops_service:8000"
-      TRAINING_API_URL: "http://training-api:8000"
-      T_ROUTE: "0.60"
-      T_MARGIN: "0.10"
     healthcheck:
       <<: *common-healthcheck
     logging:
@@ -129,27 +123,21 @@ services:
 
   ollama:
     image: ollama/ollama:0.6
+    <<: *env-file-defaults
     profiles:
       - refine-container
     ports:
       - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    environment:
-      OLLAMA_MAX_LOADED_MODELS: "${OLLAMA_MAX_LOADED_MODELS:-1}"
-      OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"
-      OLLAMA_MAX_QUEUE: "${OLLAMA_MAX_QUEUE:-512}"
-      OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:-30m}"
-      OLLAMA_FLASH_ATTENTION: "${OLLAMA_FLASH_ATTENTION:-0}"
-      OLLAMA_KV_CACHE_TYPE: "${OLLAMA_KV_CACHE_TYPE:-f16}"
     entrypoint: ["/bin/sh", "-c"]
     command: >
       "ollama serve &
        until ollama list >/dev/null 2>&1; do sleep 1; done &&
-       ollama pull ${OLLAMA_MODEL:-phi3:mini} &&
+       ollama pull $${OLLAMA_MODEL:-phi3:mini} &&
        wait"
     healthcheck:
-      test: ["CMD", "sh", "-c", "ollama list | grep -q ${OLLAMA_MODEL:-phi3:mini}"]
+      test: ["CMD", "sh", "-c", "ollama list | grep -q $${OLLAMA_MODEL:-phi3:mini}"]
       interval: 30s
       timeout: 10s
       retries: 10

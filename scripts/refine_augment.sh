@@ -50,6 +50,7 @@ if [[ ! -f "$env_file" ]]; then
   python3 "${REPO_ROOT}/scripts/generate_env.py" "${CONFIG_ENV}"
 fi
 export PROJECT_ENV_FILE="../env/.env.${CONFIG_ENV}"
+export ENV="${CONFIG_ENV}"
 # shellcheck disable=SC1090
 source "$env_file"
 

@@ -107,7 +107,8 @@ health checks - see Section 9
 **Routing Policy:**
 
 - Model produces probabilities for all 4 labels
-- Gateway uses confidence threshold (`T_route`; runtime 0.60 via Compose,
+- Gateway uses confidence threshold (`T_route`; runtime default 0.60 from
+  generated env config,
   code fallback 0.55) for non-unknown routes
 - Optional margin check: if difference between top two routes < threshold → treat
 as unknown
@@ -1151,7 +1152,7 @@ variables. For details, see `CONFIGURATION.md`.
 ### Start Services
 
 ```bash
-python scripts/generate_env.py dev
+python scripts/generate_env.py
 
 docker compose -f compose/docker-compose.yaml up --build
 ```
@@ -1159,7 +1160,7 @@ docker compose -f compose/docker-compose.yaml up --build
 ### Start with Dev Profile
 
 ```bash
-python scripts/generate_env.py dev
+python scripts/generate_env.py
 
 docker compose -f compose/docker-compose.yaml -f compose/docker-compose.dev.yaml --profile dev up
 ```

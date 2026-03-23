@@ -30,8 +30,8 @@ observability stack is required; tracing is application-level.
 **Prerequisites:** Docker and Docker Compose.
 
 ```bash
-# Generate env files (required before first compose up; needs Python 3)
-python scripts/generate_env.py dev
+# Generate env file for selected environment (defaults to ENV=dev from PROJECT_CONFIG.yaml)
+python scripts/generate_env.py
 
 # Build and start
 docker compose -f compose/docker-compose.yaml up --build -d

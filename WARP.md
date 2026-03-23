@@ -30,8 +30,8 @@ Configuration follows a rigid hierarchy to ensure reproducibility:
 
 1. **Source of Truth**: `config/PROJECT_CONFIG.yaml` (contains `default`, `dev`,
    etc. environment sections).
-2. **Generation**: `scripts/generate_env.py <env>` parses the YAML and creates
-   flat `.env` files (e.g., `env/.env.dev`).
+2. **Generation**: `scripts/generate_env.py` reads `default.ENV` (fallback
+   `dev`) unless an explicit `<env>` is passed, then creates `env/.env.<env>`.
 3. **Consumption**: Docker compose files reference the generated `.env` file via
    the `env_file` directive.
 

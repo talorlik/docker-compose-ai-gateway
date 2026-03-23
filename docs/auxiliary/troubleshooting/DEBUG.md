@@ -26,7 +26,7 @@ AI_ROUTER_URL="http://localhost:8001"
 Start with the Refine profile (includes `training-api`, `redis`, and `refiner`).
 
 ```bash
-CONFIG_ENV=dev ./scripts/demo.sh run
+./scripts/demo.sh run
 ```
 
 Stop containers (keeps volumes).
@@ -378,7 +378,7 @@ The "full refine" flow uses the CLI and runs split phases with a shared
 ### CLI (recommended for end-to-end testing)
 
 ```bash
-CONFIG_ENV=dev ./scripts/demo.sh refine --limit 5
+./scripts/demo.sh refine --limit 5
 ```
 
 If you want explicit split control, use `scripts/demo.sh relabel` and

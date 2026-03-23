@@ -1,9 +1,17 @@
 default:
+  ENV: dev
   # Shared logging and Python runtime defaults
   LOG_LEVEL: info
   REQUEST_TIMEOUT: "30"
   PYTHONDONTWRITEBYTECODE: "1"
   PYTHONUNBUFFERED: "1"
+  AI_ROUTER_URL: http://ai_router:8000
+  SEARCH_SERVICE_URL: http://search_service:8000
+  IMAGE_SERVICE_URL: http://image_service:8000
+  OPS_SERVICE_URL: http://ops_service:8000
+  TRAINING_API_URL: http://training-api:8000
+  T_ROUTE: "0.60"
+  T_MARGIN: "0.10"
 
   # Core paths used by training-api/refiner flows
   MODEL_ARTIFACTS_PATH: /model

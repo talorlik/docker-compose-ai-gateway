@@ -336,7 +336,8 @@ per_label_recall.
 
 **Policy (gateway):**
 
-- `T_ROUTE` (runtime 0.60 via Compose; code fallback 0.55): minimum
+- `T_ROUTE` (runtime default 0.60 from generated env config;
+  code fallback 0.55): minimum
   confidence to route
 - `T_MARGIN` (default 0.10): minimum gap between top-1 and top-2
 - If route is `unknown` or below threshold or margin: return 404, no proxy
@@ -368,7 +369,7 @@ Each trace entry: `service`, `event`, `ts` (ISO 8601), optional `meta`.
   run from built images.
 - **Central config:** `config/PROJECT_CONFIG.yaml` - single source of truth for
   project-wide settings (paths, Redis URL, Ollama URLs, refine knobs); see
-  `CONFIGURATION.md` for details. Env files such as `env/.env.dev` are
+  `CONFIGURATION.md` for details. Env files such as `env/.env.<env>` are
   generated from this file via `scripts/generate_env.py` and consumed by
   Docker Compose (`env_file`).
 - **Dev overlay:** `compose/docker-compose.dev.yaml` - overlay merged with the
