@@ -78,6 +78,18 @@ curl -s -X POST "http://localhost:8001/classify" \
   | python3 -m json.tool
 ```
 
+Quick comparison: direct `ai_router` classify vs gateway `/api/request`.
+
+```bash
+curl -s -X POST http://localhost:8001/classify \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"cmp-1","text":"Kubectl get pods in namespace default"}' | jq
+
+curl -s -X POST http://localhost:8000/api/request \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"cmp-1","text":"Kubectl get pods in namespace default","trace":[]}' | jq
+```
+
 Tail logs (add any service names you need).
 
 ```bash
