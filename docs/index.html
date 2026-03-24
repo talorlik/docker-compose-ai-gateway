@@ -66,6 +66,7 @@
                     <li><a href="#access">Access</a></li>
                     <li><a href="#security">Security</a></li>
                     <li><a href="#support">Support</a></li>
+                    <li><a href="#repository">Repository</a></li>
                     <li><a href="#license">License</a></li>
                 </ul>
             </div>
@@ -204,10 +205,11 @@ docker compose -f compose/docker-compose.yaml --profile refine run --rm training
                 <h3>Project Structure</h3>
                 <pre><code>compose/          # Docker Compose definitions
 config/           # Authoritative PROJECT_CONFIG.yaml
-env/              # Generated .env.&lt;env&gt; files for Compose
-services/         # Gateway, router, trainer, backends, training-api
-scripts/          # Demo, env generation, promotion utilities
-docs/             # Project docs and this GitHub Page</code></pre>
+env/              # Generated .env.&lt;env&gt; files for compose execution
+services/         # gateway, ai_router, backends, trainer, refiner, training-api
+scripts/          # Demo, env generation, refine, and promote helpers
+tests/            # Integration and e2e tests
+docs/             # Auxiliary docs, diagrams, and this GitHub Page</code></pre>
             </div>
         </section>
 
@@ -237,7 +239,7 @@ docs/             # Project docs and this GitHub Page</code></pre>
                 <p>
                     For build, run, stop, scaling, and failure simulation guidance,
                     see the detailed demo document:
-                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/demo/DEMO.md">docs/auxiliary/demo/DEMO.md</a>.
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/demo/DEMO.md">DEMO.md</a>.
                 </p>
             </div>
         </section>
@@ -409,7 +411,7 @@ docs/             # Project docs and this GitHub Page</code></pre>
                 </p>
                 <p>
                     Troubleshooting guide:
-                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/troubleshooting/DEBUG.md">docs/auxiliary/troubleshooting/DEBUG.md</a>.
+                    <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/troubleshooting/DEBUG.md">DEBUG.md</a>.
                 </p>
             </div>
             <div class="card">
@@ -436,6 +438,15 @@ pytest tests/ -v</code></pre>
             </div>
         </section>
 
+        <section id="repository">
+            <h2>Repository</h2>
+            <div class="card">
+                <p>
+                    GitHub Repository: <a href="https://github.com/talorlik/docker-compose-ai-gateway" target="_blank" rel="noopener noreferrer">docker-compose-ai-gateway</a>
+                </p>
+            </div>
+        </section>
+
         <section id="license">
             <h2>License</h2>
             <div class="card">
@@ -451,17 +462,6 @@ pytest tests/ -v</code></pre>
 
     <footer>
         <p><strong>Docker Compose AI Gateway Documentation</strong></p>
-        <p>
-            <a href="https://github.com/talorlik/docker-compose-ai-gateway" target="_blank" rel="noopener noreferrer">Repository</a>
-            |
-            <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/README.md" target="_blank" rel="noopener noreferrer">README</a>
-            |
-            <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/demo/DEMO.md" target="_blank" rel="noopener noreferrer">Demo</a>
-            |
-            <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/docs/auxiliary/troubleshooting/DEBUG.md" target="_blank" rel="noopener noreferrer">Troubleshooting</a>
-            |
-            <a href="https://github.com/talorlik/docker-compose-ai-gateway/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>
-        </p>
         <p>Copyright (c) Tal Orlik - MIT licensed.</p>
     </footer>
 
